@@ -1,2 +1,8 @@
 RewriteEngine On
+DirectoryIndex index.html
+
+RewriteRule ^(apps|scripts|node_modules)(/|$) - [F,L]
+RewriteRule ^(package\.json|package-lock\.json|docker-compose\.yml)$ - [F,L]
+RewriteRule (^|/)\. - [F,L]
+
 RewriteRule ^(api|auth)(/|$) proxy.php [L,QSA]

@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="ru"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Сборка — WARDOGS СНГ</title><meta name="description" content="Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam."><link rel="icon" href="/brand/logo.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap"><link rel="stylesheet" href="/_astro/b.DhBmPV-r.css"></head> <body data-metrika> <header class="topbar"> <div class="wrap top"> <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="">WARDOGS <em>СНГ</em></a> <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button> <nav class="nav" id="site-nav"> <a href="/calculator">Калькулятор</a> <a href="/builds">Сборки</a> <a href="/weapons">Оружие</a> <a href="/vehicles">Техника</a> <a href="/ratings">Рейтинг</a> <a href="/squads">Сквады</a> <div class="account"> <a class="btn small" href="/discord">В Discord</a> <span id="account"></span> </div> </nav> </div> </header> <main class="wrap">  <div id="build-page"><p>Загрузка сборки.</p></div>  </main> <footer class="wrap foot">
+Неофициальный фан-сайт. Цифры предметов взяты из файлов игры, билд <span id="build">25937608</span>.
+</footer> <script type="module" src="/_astro/Base.astro_astro_type_script_index_0_lang.B6zepcOw.js"></script> </body> </html> <script type="module">const n=document.querySelector("#build-page"),c=new URLSearchParams(location.search).get("id")??"",a=s=>s.replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[t]??t);function f(s){const t=new Date(s);return Number.isNaN(t.getTime())?"":t.toLocaleDateString("ru-RU")}if(!/^\d+$/.test(c))n.innerHTML="<h1>Такой страницы нет</h1>";else{const s=await fetch(`/api/builds/${c}`);if(!s.ok)n.innerHTML="<h1>Сборки нет</h1><p>Её не публиковали или она скрыта.</p>";else{const t=await s.json(),o=t.build,r=o.season===t.current,m=t.notes.filter(e=>e.kind==="review"),h=t.notes.filter(e=>e.kind==="comment"),l=t.mine===o.steam_id,d=e=>`
+        <article class="note-card ${e.kind==="review"?"review":""}">
+          <strong>${a(e.persona??"игрок")}</strong>
+          <span class="note"> · ${e.kind==="review"?"разбор":"комментарий"} · ${f(e.created_at)}</span>
+          <p>${a(e.body)}</p>
+        </article>`;n.innerHTML=`
+        <p class="eyebrow">Сборка игрока</p>
+        <h1>${a(o.title)}</h1>
+        <p><span class="pill ${r?"now":"old"}">${r?`сезон ${a(o.season)}`:`сезон ${a(o.season)} · сейчас ${a(t.current)}`}</span></p>
+        <p>${a(o.summary||"")} · <a href="/p?id=${o.steam_id}">${a(o.persona??"игрок")}</a></p>
+        <p><a class="btn" href="/calculator?k=${encodeURIComponent(o.code)}">Открыть в калькуляторе</a></p>
+        <div class="row" id="votes">
+          ${l?"<p>Свою сборку оценивают другие.</p>":`
+            <button class="btn small ${t.myVote===!0?"is-done":"ghost"}" type="button" data-vote="yes">Полезна · ${o.useful}</button>
+            <button class="btn small ${t.myVote===!1?"is-no":"ghost"}" type="button" data-vote="no">Не полезна · ${o.useless}</button>
+          `}
+        </div>
+        ${l?'<p><button class="btn ghost small" id="drop" type="button">Убрать из топа</button></p>':""}
+        <h2>Разборы</h2>
+        <div id="reviews">${m.map(d).join("")||"<p>Разборов пока нет. Напишите, как сборка ведёт себя в бою.</p>"}</div>
+        <h2>Комментарии</h2>
+        <div id="comments">${h.map(d).join("")||"<p>Комментариев пока нет.</p>"}</div>
+        <form id="note-form">
+          <label>Текст<textarea id="note-body" maxlength="1200" placeholder="Короткий комментарий или разбор от 20 символов"></textarea></label>
+          <label class="check"><input id="note-review" type="checkbox" /> Это разбор</label>
+          <button class="btn" type="submit">Отправить</button>
+        </form>
+        <p class="note" id="note-status"></p>
+      `,n.querySelectorAll("[data-vote]").forEach(e=>{e.addEventListener("click",async()=>{const i=await fetch(`/api/builds/${c}/vote`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({useful:e.dataset.vote==="yes"})});if(i.status===401){location.href=`/auth/steam?next=${encodeURIComponent(location.pathname+location.search)}`;return}i.ok&&location.reload()})}),n.querySelector("#drop")?.addEventListener("click",async()=>{(await fetch(`/api/builds/${c}`,{method:"DELETE"})).ok&&(location.href="/builds")}),n.querySelector("#note-form")?.addEventListener("submit",async e=>{e.preventDefault();const i=n.querySelector("#note-status"),p=n.querySelector("#note-review").checked,b=n.querySelector("#note-body").value.trim(),u=await fetch(`/api/builds/${c}/notes`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:p?"review":"comment",body:b})});if(u.status===401){location.href=`/auth/steam?next=${encodeURIComponent(location.pathname+location.search)}`;return}if(!u.ok){i&&(i.textContent=p?"Разбор — хотя бы 20 символов.":"Комментарий слишком короткий.");return}location.reload()})}}</script>
