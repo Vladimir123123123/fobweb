@@ -35,7 +35,7 @@ function stamp(value) {
 stamp(catalog);
 await writeFile(catalogPath, JSON.stringify(catalog));
 
-const dir = new URL("../apps/web/public/icons/", import.meta.url);
+const dir = new URL("../apps/web/public/art/", import.meta.url);
 await mkdir(dir, { recursive: true });
 const files = [...new Set(hit.map((id) => icons[id]))];
 let saved = 0;

@@ -51,5 +51,5 @@ export function gunMark(kind: string) {
 
 export function itemArt(icon: string | null | undefined, fallback: string) {
   if (!icon || !/^[a-z0-9_]+\.webp$/.test(icon)) return fallback;
-  return `<img class="art" src="/icons/${icon}" alt="" decoding="async" />`;
+  return `<img class="art" src="/art/${icon}" alt="" decoding="async" />`;
 }
