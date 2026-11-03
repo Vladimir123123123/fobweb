@@ -1,0 +1,98 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Сборка — WARDOGS СНГ">
+  <div id="build-page"><p>Загрузка сборки.</p></div>
+</Base>
+<script>
+  const root = document.querySelector("#build-page")!;
+  const id = new URLSearchParams(location.search).get("id") ?? "";
+  const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  function when(value: string) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("ru-RU");
+  }
+  if (!/^\d+$/.test(id)) {
+    root.innerHTML = "<h1>Такой страницы нет</h1>";
+  } else {
+    const response = await fetch(`/api/builds/${id}`);
+    if (!response.ok) {
+      root.innerHTML = "<h1>Сборки нет</h1><p>Её не публиковали или она скрыта.</p>";
+    } else {
+      const data = await response.json();
+      const build = data.build;
+      const fresh = build.season === data.current;
+      const reviews = data.notes.filter((note: { kind: string }) => note.kind === "review");
+      const comments = data.notes.filter((note: { kind: string }) => note.kind === "comment");
+      const mine = data.mine === build.steam_id;
+      const card = (note: { kind: string; body: string; persona: string | null; created_at: string }) => `
+        <article class="note-card ${note.kind === "review" ? "review" : ""}">
+          <strong>${esc(note.persona ?? "игрок")}</strong>
+          <span class="note"> · ${note.kind === "review" ? "разбор" : "комментарий"} · ${when(note.created_at)}</span>
+          <p>${esc(note.body)}</p>
+        </article>`;
+      root.innerHTML = `
+        <p class="eyebrow">Сборка игрока</p>
+        <h1>${esc(build.title)}</h1>
+        <p><span class="pill ${fresh ? "now" : "old"}">${fresh ? `сезон ${esc(build.season)}` : `сезон ${esc(build.season)} · сейчас ${esc(data.current)}`}</span></p>
+        <p>${esc(build.summary || "")} · <a href="/p?id=${build.steam_id}">${esc(build.persona ?? "игрок")}</a></p>
+        <p><a class="btn" href="/calculator?k=${encodeURIComponent(build.code)}">Открыть в калькуляторе</a></p>
+        <div class="row" id="votes">
+          ${mine ? `<p>Свою сборку оценивают другие.</p>` : `
+            <button class="btn small ${data.myVote === true ? "is-done" : "ghost"}" type="button" data-vote="yes">Полезна · ${build.useful}</button>
+            <button class="btn small ${data.myVote === false ? "is-no" : "ghost"}" type="button" data-vote="no">Не полезна · ${build.useless}</button>
+          `}
+        </div>
+        ${mine ? `<p><button class="btn ghost small" id="drop" type="button">Убрать из топа</button></p>` : ""}
+        <h2>Разборы</h2>
+        <div id="reviews">${reviews.map(card).join("") || "<p>Разборов пока нет. Напишите, как сборка ведёт себя в бою.</p>"}</div>
+        <h2>Комментарии</h2>
+        <div id="comments">${comments.map(card).join("") || "<p>Комментариев пока нет.</p>"}</div>
+        <form id="note-form">
+          <label>Текст<textarea id="note-body" maxlength="1200" placeholder="Короткий комментарий или разбор от 20 символов"></textarea></label>
+          <label class="check"><input id="note-review" type="checkbox" /> Это разбор</label>
+          <button class="btn" type="submit">Отправить</button>
+        </form>
+        <p class="note" id="note-status"></p>
+      `;
+      root.querySelectorAll<HTMLButtonElement>("[data-vote]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const vote = await fetch(`/api/builds/${id}/vote`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ useful: button.dataset.vote === "yes" }),
+          });
+          if (vote.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+            return;
+          }
+          if (vote.ok) location.reload();
+        });
+      });
+      root.querySelector("#drop")?.addEventListener("click", async () => {
+        const dropped = await fetch(`/api/builds/${id}`, { method: "DELETE" });
+        if (dropped.ok) location.href = "/builds";
+      });
+      root.querySelector("#note-form")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = root.querySelector("#note-status");
+        const review = (root.querySelector("#note-review") as HTMLInputElement).checked;
+        const body = (root.querySelector("#note-body") as HTMLTextAreaElement).value.trim();
+        const sent = await fetch(`/api/builds/${id}/notes`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind: review ? "review" : "comment", body }),
+        });
+        if (sent.status === 401) {
+          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          return;
+        }
+        if (!sent.ok) {
+          if (status) status.textContent = review ? "Разбор — хотя бы 20 символов." : "Комментарий слишком короткий.";
+          return;
+        }
+        location.reload();
+      });
+    }
+  }
+</script>

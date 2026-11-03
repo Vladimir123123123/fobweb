@@ -1,0 +1,27 @@
+---
+import Base from "../layouts/Base.astro";
+const invite = import.meta.env.PUBLIC_DISCORD_INVITE ?? "";
+---
+<Base title="Переход в Discord — WARDOGS СНГ" robots="noindex">
+  <p class="eyebrow">Сервер сообщества</p>
+  <h1>Discord</h1>
+  {invite ? (
+    <p class="lead">Сейчас откроется сервер. Если страница осталась, нажмите кнопку ещё раз.</p>
+    <p><a class="btn wait" id="discord-go" href={invite}>Открыть Discord</a></p>
+  ) : (
+    <p class="lead">Ссылка на сервер появится здесь.</p>
+    <p><a class="btn ghost" href="/">На главную</a></p>
+  )}
+</Base>
+<script>
+  const invite = document.querySelector<HTMLAnchorElement>("#discord-go")?.href ?? "";
+  const metrika = document.body.dataset.metrika ?? "";
+  if (metrika && "ym" in window) {
+    (window as unknown as { ym: (id: number, goal: string, name: string) => void }).ym(Number(metrika), "reachGoal", "discord_click");
+  }
+  const { track } = await import("../scripts/site.ts");
+  if (invite.startsWith("https://discord.gg/") || invite.startsWith("https://discord.com/")) {
+    track("discord_click");
+    setTimeout(() => location.replace(invite), 400);
+  }
+</script>

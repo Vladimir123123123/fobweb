@@ -1,0 +1,62 @@
+---
+import "../styles/site.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  robots?: string;
+  fit?: boolean;
+}
+const { title, description = "Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam.", robots, fit = false } = Astro.props;
+const metrika = import.meta.env.PUBLIC_METRIKA_ID ?? "";
+const path = Astro.url.pathname;
+---
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {robots && <meta name="robots" content={robots} />}
+    <link rel="icon" href="/brand/logo.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap" />
+    {metrika && (
+      <script is:inline define:vars={{ metrika }}>{`
+        (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+        (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+        ym(${metrika}, "init", { clickmap:true, trackLinks:true, accurateTrackBounce:true });
+      `}</script>
+    )}
+  </head>
+  <body class={fit ? "fit" : undefined} data-metrika={metrika}>
+    <header class="topbar">
+      <div class="wrap top">
+        <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" />WARDOGS <em>СНГ</em></a>
+        <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button>
+        <nav class="nav" id="site-nav">
+          <a href="/calculator" aria-current={path.startsWith("/calculator") ? "page" : undefined}>Калькулятор</a>
+          <a href="/builds" aria-current={path.startsWith("/builds") || path === "/b" ? "page" : undefined}>Сборки</a>
+          <a href="/weapons" aria-current={path.startsWith("/weapons") ? "page" : undefined}>Оружие</a>
+          <a href="/vehicles" aria-current={path.startsWith("/vehicles") ? "page" : undefined}>Техника</a>
+          <a href="/ratings" aria-current={path.startsWith("/ratings") ? "page" : undefined}>Рейтинг</a>
+          <a href="/squads" aria-current={path.startsWith("/squads") ? "page" : undefined}>Сквады</a>
+          <div class="account">
+            <a class="btn small" href="/discord">В Discord</a>
+            <span id="account"></span>
+          </div>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <slot />
+    </main>
+    <footer class="wrap foot">
+      Неофициальный фан-сайт. Цифры предметов взяты из файлов игры, билд <span id="build">25937608</span>.
+    </footer>
+    <script>
+      import "../scripts/site.ts";
+    </script>
+  </body>
+</html>

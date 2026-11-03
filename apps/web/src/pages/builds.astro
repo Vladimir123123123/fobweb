@@ -1,0 +1,208 @@
+---
+import Base from "../layouts/Base.astro";
+import catalog from "../data/catalog.json";
+---
+<Base title="Сборки — WARDOGS СНГ" description="Топ сборок сезона: цена, вес и оценка игроков.">
+  <div class="page-head">
+    <div>
+      <h1>Сборки</h1>
+      <p class="lead">Сборки игроков сообщества. Популярное — те, что чаще отмечают полезными.</p>
+    </div>
+    <a class="btn" href="/calculator">Собрать сборку</a>
+  </div>
+  <div class="board">
+    <div class="tabs">
+      <button class="tab on" type="button" data-sort="popular">Популярное</button>
+      <button class="tab" type="button" data-sort="top">Топ</button>
+      <button class="tab" type="button" data-sort="new">Новое</button>
+    </div>
+    <div class="filters">
+      <select id="gun"><option value="">Всё оружие</option></select>
+      <select id="klass"><option value="">Любой вес</option></select>
+      <select id="cost">
+        <option value="">Любая цена</option>
+        <option value="5000">До $5 000</option>
+        <option value="15000">До $15 000</option>
+        <option value="15001">Дороже $15 000</option>
+      </select>
+      <select id="season"><option value="">Сезон</option></select>
+      <input id="q" placeholder="Поиск сборки..." />
+    </div>
+    <p class="note" id="builds-note"></p>
+    <div id="builds"></div>
+  </div>
+</Base>
+<script>
+  import catalog from "../data/catalog.json";
+  import { gunMark, itemArt } from "../scripts/guns";
+
+  type Piece = { id: string; name: string; weight: number | null; price: number | null; archetype?: string; icon?: string; slots?: Slot[] };
+  type Slot = { id: string; options: Piece[] };
+  type Row = {
+    id: string;
+    title: string;
+    summary: string;
+    code: string;
+    season: string;
+    created_at: string;
+    persona: string | null;
+    steam_id: string;
+    useful: number;
+    useless: number;
+    comments: number;
+    reviews: number;
+  };
+  const guns = [...catalog.weapons, ...catalog.sidearms] as Piece[];
+  const byId = new Map(guns.map((gun) => [gun.id, gun]));
+  const gunSelect = document.querySelector<HTMLSelectElement>("#gun")!;
+  const classSelect = document.querySelector<HTMLSelectElement>("#klass")!;
+  const costSelect = document.querySelector<HTMLSelectElement>("#cost")!;
+  const seasonSelect = document.querySelector<HTMLSelectElement>("#season")!;
+  const queryInput = document.querySelector<HTMLInputElement>("#q")!;
+  const note = document.querySelector("#builds-note")!;
+  const list = document.querySelector("#builds")!;
+  let sort = "popular";
+  let rows: Row[] = [];
+  let current = "";
+  let offline = false;
+
+  for (const gun of catalog.weapons) {
+    gunSelect.insertAdjacentHTML("beforeend", `<option value="${gun.id}">${gun.name}</option>`);
+  }
+  for (const item of catalog.weightClasses) {
+    classSelect.insertAdjacentHTML("beforeend", `<option value="${item.id}">${item.label}</option>`);
+  }
+
+  const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  const money = (value: number | null) => value === null ? "нет цены" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
+
+  function decode(code: string) {
+    try {
+      const json = decodeURIComponent(escape(atob(code.replaceAll("-", "+").replaceAll("_", "/"))));
+      return JSON.parse(json) as { w?: string; s?: string; h?: string; a?: string; v?: string; b?: string; t?: Record<string, string>; u?: Record<string, string> };
+    } catch {
+      return null;
+    }
+  }
+
+  function piece(id: string | undefined, list: Piece[]) {
+    return list.find((item) => item.id === id) ?? null;
+  }
+
+  function facts(row: Row) {
+    const payload = decode(row.code);
+    const gun = byId.get(payload?.w ?? "") ?? null;
+    const parts: Piece[] = [];
+    if (gun) parts.push(gun);
+    const pistol = byId.get(payload?.s ?? "");
+    if (pistol) parts.push(pistol);
+    const gear = [
+      piece(payload?.h, catalog.helmets),
+      piece(payload?.a, catalog.armors),
+      piece(payload?.v, catalog.vests),
+      piece(payload?.b, catalog.backpacks),
+    ].filter((item): item is Piece => Boolean(item));
+    parts.push(...gear);
+    let attachments = 0;
+    for (const [host, chosen] of [[gun, payload?.t], [pistol, payload?.u]] as const) {
+      if (!host?.slots || !chosen) continue;
+      for (const slot of host.slots) {
+        const option = slot.options.find((item) => item.id === chosen[slot.id]);
+        if (!option) continue;
+        parts.push(option);
+        attachments += 1;
+      }
+    }
+    let price = 0;
+    let knownPrice = false;
+    let weight = 0;
+    for (const part of parts) {
+      if (part.price !== null) {
+        price += part.price;
+        knownPrice = true;
+      }
+      if (part.weight !== null) weight += part.weight;
+    }
+    const klass = [...catalog.weightClasses].reverse().find((item) => weight >= item.minKg) ?? catalog.weightClasses[0];
+    return { gun, price: knownPrice ? price : null, weight, klass, attachments };
+  }
+
+  function ago(value: string) {
+    const days = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 86400000));
+    if (days < 1) return "сегодня";
+    if (days < 7) return `${days} дн. назад`;
+    if (days < 30) return `${Math.max(1, Math.round(days / 7))} нед. назад`;
+    return `${Math.max(1, Math.round(days / 30))} мес. назад`;
+  }
+
+  function paint() {
+    if (offline) {
+      note.textContent = "Список сейчас не открывается.";
+      list.innerHTML = "";
+      return;
+    }
+    const query = queryInput.value.trim().toLowerCase();
+    const limit = Number(costSelect.value);
+    const visible = rows
+      .map((row) => ({ row, fact: facts(row) }))
+      .filter(({ row, fact }) => {
+        if (gunSelect.value && fact.gun?.id !== gunSelect.value) return false;
+        if (classSelect.value && fact.klass?.id !== classSelect.value) return false;
+        if ((limit === 5000 || limit === 15000) && !(fact.price !== null && fact.price <= limit)) return false;
+        if (limit === 15001 && !(fact.price !== null && fact.price > 15000)) return false;
+        const hay = `${row.title} ${row.summary} ${row.persona ?? ""} ${fact.gun?.name ?? ""}`.toLowerCase();
+        return hay.includes(query);
+      })
+      .sort((a, b) => {
+        if (sort === "new") return +new Date(b.row.created_at) - +new Date(a.row.created_at);
+        if (sort === "top") return (b.row.useful - b.row.useless) - (a.row.useful - a.row.useless);
+        return b.row.useful - a.row.useful || b.row.reviews - a.row.reviews;
+      });
+    note.textContent = visible.length ? "" : "В этом сезоне таких сборок нет.";
+    list.innerHTML = visible.map(({ row, fact }) => `
+      <a class="loadout" href="/b?id=${row.id}">
+        <span class="vote-col"><span class="chev">⌃</span><b>${row.useful}</b></span>
+        <span class="pic">${itemArt(fact.gun?.icon, gunMark(fact.gun?.archetype ?? ""))}</span>
+        <span>
+          <strong>${esc(row.title)}</strong>
+          <small>${esc(fact.gun?.name ?? "без оружия")}${fact.attachments ? ` · ${fact.attachments} обвеса` : ""}</small>
+          <small>${esc(row.persona ?? "игрок")} · ${ago(row.created_at)}${row.season === current ? "" : ` · сезон ${esc(row.season)}`}</small>
+        </span>
+        <span class="metric"><span>Цена</span><b class="price">${money(fact.price)}</b></span>
+        <span class="metric"><span>Вес</span><b>${fact.weight.toFixed(1)} кг</b><small>${esc(fact.klass?.label ?? "")}</small></span>
+        <span class="metric"><span>Разборы</span><b>${row.reviews}</b><small>${row.comments} коммент.</small></span>
+      </a>
+    `).join("");
+  }
+
+  document.querySelectorAll<HTMLButtonElement>(".tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      sort = button.dataset.sort ?? "popular";
+      document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("on", item === button));
+      paint();
+    });
+  });
+  for (const node of [gunSelect, classSelect, costSelect, queryInput]) node.addEventListener("input", paint);
+
+  async function load() {
+    try {
+      const response = await fetch(`/api/builds?season=${encodeURIComponent(seasonSelect.value || "")}`);
+      if (!response.ok) throw new Error("down");
+      offline = false;
+      const data = await response.json();
+      current = data.current;
+      rows = data.builds;
+      const options = [...data.seasons.map((item: string) => ({ value: item, label: `Сезон ${item}` })), { value: "all", label: "Все сезоны" }];
+      const selected = seasonSelect.value || data.season;
+      seasonSelect.innerHTML = options.map((item) => `<option value="${item.value}">${item.label}</option>`).join("");
+      seasonSelect.value = selected;
+      paint();
+    } catch {
+      offline = true;
+      rows = [];
+      paint();
+    }
+  }
+  seasonSelect.addEventListener("change", load);
+  load();
+</script>

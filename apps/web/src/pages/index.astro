@@ -1,0 +1,125 @@
+---
+import Base from "../layouts/Base.astro";
+const season = import.meta.env.GAME_SEASON ?? "02";
+---
+<Base fit title="WARDOGS СНГ">
+  <div class="hero">
+    <div class="reel">
+      <section class="banner" id="reel">
+        <a class="slide on" href="/discord">
+          <img src="/brand/banner.jpg" alt="FOB WARDOGS, Forward Operating Base" />
+        </a>
+        <a class="slide slot" href="/squads">
+          <span><strong>Здесь может быть ваш баннер</strong><small>Место сквада на главной</small></span>
+        </a>
+        <a class="slide slot" href="/squads">
+          <span><strong>Здесь может быть ваш баннер</strong><small>Тот же размер, что у баннера FOB</small></span>
+        </a>
+        <a class="slide slot" href="/squads">
+          <span><strong>Здесь может быть ваш баннер</strong><small>Клик открывает Discord сквада</small></span>
+        </a>
+        <span class="reel-tag" id="reel-tag" hidden>FOB</span>
+      </section>
+      <div class="reel-dots" id="reel-dots"></div>
+    </div>
+    <div>
+      <p class="eyebrow"><span class="f">F</span><span class="o">O</span><span class="b">B</span> · сезон {season}</p>
+      <h1>Сообщество WARDOGS для игроков СНГ</h1>
+      <p class="lead">Здесь собирают комплекты, смотрят технику и рейтинг. Чтобы общаться с людьми, зайдите в Discord. На сайт входят через Steam.</p>
+      <div class="row">
+        <a class="btn" href="/discord">В Discord</a>
+        <a class="btn ghost" href="/calculator">Собрать комплект</a>
+      </div>
+    </div>
+  </div>
+  <section class="steps">
+    <article class="panel step">
+      <span class="index">01</span>
+      <strong>Discord</strong>
+      <p>Кнопка открывает сервер сообщества. Там разговоры, а не таблицы.</p>
+    </article>
+    <article class="panel step">
+      <span class="index">02</span>
+      <strong>Сборка</strong>
+      <p>Выберите оружие и броню. Ссылку можно отправить в чат или поставить в топ сезона.</p>
+    </article>
+    <article class="panel step">
+      <span class="index">03</span>
+      <strong>Steam</strong>
+      <p>Один вход. Профиль, рейтинг, сквад и оценка чужих сборок держатся на нём.</p>
+    </article>
+  </section>
+</Base>
+<script>
+  const reel = document.querySelector<HTMLElement>("#reel");
+  const tag = document.querySelector("#reel-tag");
+  const dots = document.querySelector("#reel-dots");
+  if (reel && tag && dots) {
+    try {
+      const response = await fetch("/api/squad-ads");
+      if (response.ok) {
+        const data = await response.json();
+        for (const ad of data.ads ?? []) {
+          if (typeof ad?.href !== "string" || !ad.href.startsWith("https://discord.gg/")) continue;
+          if (typeof ad.image !== "string" || !ad.image.startsWith("/api/media/")) continue;
+          const slide = document.createElement("a");
+          slide.className = "slide";
+          slide.href = ad.href;
+          slide.target = "_blank";
+          slide.rel = "noopener";
+          slide.dataset.tag = `[${ad.tag}] ${ad.name}`;
+          slide.dataset.id = String(ad.id);
+          const img = document.createElement("img");
+          img.src = ad.image;
+          img.alt = slide.dataset.tag;
+          slide.append(img);
+          const firstSlot = reel.querySelector(".slot");
+          reel.insertBefore(slide, firstSlot ?? tag);
+        }
+      }
+    } catch {
+      /* полоса остаётся с баннером FOB */
+    }
+    const slides = [...reel.querySelectorAll<HTMLAnchorElement>(".slide")];
+    let index = 0;
+    let timer = 0;
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function show(next: number) {
+      index = (next + slides.length) % slides.length;
+      slides.forEach((slide, item) => slide.classList.toggle("on", item === index));
+      tag.textContent = slides[index].dataset.tag ?? "";
+      tag.hidden = tag.textContent === "";
+      dots.querySelectorAll("button").forEach((button, item) => button.classList.toggle("on", item === index));
+    }
+    if (slides.length > 1) {
+      dots.innerHTML = slides.map((_, item) => `<button type="button" aria-label="Баннер ${item + 1}"${item === 0 ? ' class="on"' : ""}></button>`).join("");
+      dots.querySelectorAll("button").forEach((button, item) => {
+        button.addEventListener("click", () => {
+          show(item);
+          arm();
+        });
+      });
+    }
+    slides.forEach((slide) => {
+      slide.addEventListener("click", () => {
+        if (!slide.dataset.id) return;
+        const payload = JSON.stringify({
+          name: "squad_banner_click",
+          visitorId: localStorage.getItem("wd_visitor") ?? "",
+          path: `/squads/${slide.dataset.id}`,
+        });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/events", new Blob([payload], { type: "application/json" }));
+      });
+    });
+    function arm() {
+      window.clearInterval(timer);
+      if (reduce || slides.length < 2) return;
+      timer = window.setInterval(() => show(index + 1), 5500);
+    }
+    reel.addEventListener("mouseenter", () => window.clearInterval(timer));
+    reel.addEventListener("mouseleave", arm);
+    reel.addEventListener("focusin", () => window.clearInterval(timer));
+    reel.addEventListener("focusout", arm);
+    arm();
+  }
+</script>

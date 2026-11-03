@@ -1,0 +1,135 @@
+---
+import Base from "../../layouts/Base.astro";
+
+export function getStaticPaths() {
+  const code = process.env.ADMIN_PATH || "local-staff-gate";
+  return [{ params: { code } }];
+}
+---
+<Base title="Страница" robots="noindex">
+  <div id="gate">
+    <h1>Такой страницы нет</h1>
+    <p>Проверьте адрес.</p>
+  </div>
+</Base>
+<script>
+  const gate = document.querySelector("#gate")!;
+  const invite = new URLSearchParams(location.search).get("invite");
+  let session: Response;
+  try {
+    session = await fetch("/api/admin/session");
+  } catch {
+    session = new Response(null, { status: 404 });
+  }
+  if (session.status === 404 && invite) {
+    gate.innerHTML = `<h1>Подтверждение Steam</h1><p>Ссылка одноразовая. После входа через Steam она погаснет, а доступ останется на вашем SteamID.</p><a class="btn" href="/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}">Подтвердить Steam</a>`;
+    const me = await fetch("/api/me").then((response) => response.json()).catch(() => null);
+    if (me?.user) {
+      const redeemed = await fetch("/api/admin/invites/redeem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: invite }),
+      });
+    if (redeemed.ok) location.href = location.pathname;
+      else gate.innerHTML = "<h1>Такой страницы нет</h1><p>Проверьте адрес.</p>";
+    }
+  }
+  if (session.ok) {
+    const data = await fetch("/api/admin/overview").then((response) => response.json());
+    const count = (name: string) => data.sync.find((row: { status: string; count: number }) => row.status === name)?.count ?? 0;
+    const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+    gate.innerHTML = `
+      <h1>Сводка</h1>
+      <div class="stats">
+        <div class="stat"><b>${data.liveCis}</b><span>Живые профили СНГ, 7 дней</span></div>
+        <div class="stat"><b>${data.views7d}</b><span>Просмотры, 7 дней</span></div>
+        <div class="stat"><b>${data.discordClicks7d}</b><span>Клики в Discord, 7 дней</span></div>
+        <div class="stat"><b>${data.shares7d}</b><span>Ссылки сборок, 7 дней</span></div>
+      </div>
+      <p class="note">Входы за 7 дней: ${data.logins7d}. Клики по баннерам сквадов: ${data.squadBannerClicks7d ?? 0}. Сессии синка: живые ${count("active")}, погасшие ${count("expired")}.</p>
+      <h2>Откуда пришли</h2>
+      <div class="scroll"><table><tbody>
+        ${data.sources.map((row: { source: string; count: number }) => `<tr><td>${row.source}</td><td>${row.count}</td></tr>`).join("")}
+      </tbody></table></div>
+      <h2>По дням</h2>
+      <div class="scroll"><table><tbody>
+        ${data.days.map((row: { day: string; count: number }) => `<tr><td>${row.day}</td><td>${row.count}</td></tr>`).join("")}
+      </tbody></table></div>
+      <h2>Игроки</h2>
+      <div class="scroll"><table><tbody id="players">
+        ${data.players.map((player: { steam_id: string; persona: string | null; hide_leaderboard: boolean }) => `<tr><td><a href="/p?id=${player.steam_id}">${player.persona ?? player.steam_id}</a></td><td><button class="btn ghost small" data-hide="${player.steam_id}" data-on="${player.hide_leaderboard ? "1" : "0"}" type="button">${player.hide_leaderboard ? "Вернуть в топ" : "Скрыть"}</button></td></tr>`).join("")}
+      </tbody></table></div>
+      <h2>Картинки сквадов</h2>
+      <div id="assets">${(data.assets ?? []).map((asset: { id: number; kind: string; path: string; discord_url: string; tag: string; name: string }) => `<article class="panel"><img class="${asset.kind === "logo" ? "asset-preview logo" : "asset-preview"}" src="/api/media/${esc(asset.path)}" alt="" /><p>[${esc(asset.tag)}] ${esc(asset.name)} · ${asset.kind === "logo" ? "логотип" : "баннер"}</p>${asset.discord_url ? `<p>${esc(asset.discord_url)}</p>` : ""}<button class="btn small" data-asset="${asset.id}" data-accept="1" type="button">Одобрить</button> <button class="btn ghost small" data-asset="${asset.id}" data-accept="0" type="button">Отклонить</button></article>`).join("") || "<p>Новых картинок нет.</p>"}</div>
+      <h2>Сквады</h2>
+      <div id="squads">${data.squads.map((squad: { id: number; tag: string; name: string; closed: boolean; status: string; has_banner: boolean; has_logo: boolean; persona: string | null }) => `<p>[${esc(squad.tag)}] ${esc(squad.name)} · ${esc(squad.persona ?? "")} · ${squad.status === "approved" ? "в списке" : squad.status === "rejected" ? "отклонён" : "ждёт проверки"} ${squad.status === "approved" ? `<button class="btn ghost small" data-review="${squad.id}" data-accept="0" type="button">Убрать из списка</button>` : `<button class="btn small" data-review="${squad.id}" data-accept="1" type="button">Одобрить сквад</button>`} ${squad.closed ? "набор закрыт" : `<button class="btn ghost small" data-close="${squad.id}" type="button">Закрыть набор</button>`} ${squad.has_banner ? `<button class="btn ghost small" data-clear="${squad.id}" data-kind="banner" type="button">Снять баннер</button>` : ""} ${squad.has_logo ? `<button class="btn ghost small" data-clear="${squad.id}" data-kind="logo" type="button">Скрыть логотип</button>` : ""}</p>`).join("")}</div>
+      <h2>Сборки</h2>
+      <div id="builds">${(data.builds ?? []).map((build: { id: number; title: string; season: string; hidden: boolean; persona: string | null }) => `<p><a href="/b?id=${build.id}">${esc(build.title)}</a> · сезон ${esc(String(build.season))} · ${esc(build.persona ?? "")} ${build.hidden ? `<button class="btn ghost small" data-build="${build.id}" data-on="1" type="button">Вернуть</button>` : `<button class="btn ghost small" data-build="${build.id}" data-on="0" type="button">Скрыть</button>`}</p>`).join("")}</div>
+      <h2>Ссылка доступа</h2>
+      <button class="btn" id="invite" type="button">Выдать ссылку на 48 часов</button>
+      <p id="invite-url"></p>
+    `;
+    gate.querySelector("#invite")?.addEventListener("click", async () => {
+      const response = await fetch("/api/admin/invites", { method: "POST" });
+      const payload = await response.json();
+      const node = gate.querySelector("#invite-url");
+      if (node) node.textContent = payload.url ?? "";
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-hide]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/players/${button.dataset.hide}/hide`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ hide: button.dataset.on !== "1" }),
+        });
+        location.reload();
+      });
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-close]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/squads/${button.dataset.close}/close`, { method: "POST" });
+        location.reload();
+      });
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-review]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/squads/${button.dataset.review}/review`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ accept: button.dataset.accept === "1" }),
+        });
+        location.reload();
+      });
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-clear]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/squads/${button.dataset.clear}/clear`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind: button.dataset.kind }),
+        });
+        location.reload();
+      });
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-asset]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/assets/${button.dataset.asset}/review`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ accept: button.dataset.accept === "1" }),
+        });
+        location.reload();
+      });
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-build]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/builds/${button.dataset.build}/hide`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ hide: button.dataset.on !== "1" }),
+        });
+        location.reload();
+      });
+    });
+  }
+</script>

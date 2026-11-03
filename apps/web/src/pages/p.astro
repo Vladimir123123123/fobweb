@@ -1,0 +1,66 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Профиль — WARDOGS СНГ">
+  <div id="profile"><p>Загрузка профиля.</p></div>
+</Base>
+<script>
+  const root = document.querySelector("#profile")!;
+  const id = new URLSearchParams(location.search).get("id") ?? "";
+  function money(value: number | null) {
+    return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
+  }
+  function chart(points: Array<{ wardog_level: number | null }>) {
+    const values = points.map((point) => point.wardog_level ?? 0);
+    if (values.length < 2) return "";
+    const max = Math.max(...values, 1);
+    const step = 280 / (values.length - 1);
+    const d = values.map((value, index) => `${index === 0 ? "M" : "L"}${index * step},${80 - (value / max) * 70}`).join(" ");
+    return `<svg class="chart" viewBox="0 0 280 90"><path d="${d}" fill="none" stroke="#e6b34d" stroke-width="2"/></svg>`;
+  }
+  if (!/^\d{17}$/.test(id)) {
+    root.innerHTML = "<h1>Такой страницы нет</h1>";
+  } else {
+    const [profile, me] = await Promise.all([
+      fetch(`/api/players/${id}`).then(async (response) => response.ok ? response.json() : null),
+      fetch("/api/me").then((response) => response.json()).catch(() => ({ user: null })),
+    ]);
+    if (!profile) {
+      root.innerHTML = "<h1>Профиль ещё не создан</h1><p>Игрок не входил через Steam на этом сайте.</p>";
+    } else {
+      const user = profile.user;
+      const latest = profile.history.at(-1);
+      const mine = me.user?.steam_id === id;
+      root.innerHTML = `
+        <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
+        <p>Steam ${user.steam_id}${user.country ? ` · ${user.country}` : ""}${user.discord_name ? ` · Discord ${user.discord_name}` : ""}</p>
+        <div class="stats">
+          <div class="stat"><b>${latest?.wardog_level ?? "—"}</b><span>Уровень</span></div>
+          <div class="stat"><b>${latest?.xp ?? "—"}</b><span>Опыт</span></div>
+          <div class="stat"><b>${money(latest?.cash ?? null)}</b><span>Деньги</span></div>
+          <div class="stat"><b>${money(latest?.account_value ?? null)}</b><span>Стоимость</span></div>
+        </div>
+        ${chart(profile.history)}
+        <p class="note">Снимков: ${profile.history.length}. Синхронизация: ${profile.sync?.status ?? "ещё не приходила"}.</p>
+        <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
+        ${mine ? `<div class="row">
+          <label><input id="cis" type="checkbox" ${user.cis_opt_in ? "checked" : ""}/> Участвовать в топе СНГ</label>
+          <label><input id="hide" type="checkbox" ${user.hide_leaderboard ? "checked" : ""}/> Скрыть из топа</label>
+          ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : `<span class="note">Привязка Discord на сервере выключена. На вход она не влияет.</span>`}
+        </div>` : ""}
+      `;
+      const save = async () => {
+        await fetch("/api/me", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            cisOptIn: (document.querySelector("#cis") as HTMLInputElement).checked,
+            hideLeaderboard: (document.querySelector("#hide") as HTMLInputElement).checked,
+          }),
+        });
+      };
+      document.querySelector("#cis")?.addEventListener("change", save);
+      document.querySelector("#hide")?.addEventListener("change", save);
+    }
+  }
+</script>

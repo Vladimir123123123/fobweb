@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wardogs
+      POSTGRES_PASSWORD: wardogs
+      POSTGRES_DB: wardogs
+    ports:
+      - "5432:5432"
+    volumes:
+      - wardogs-pg:/var/lib/postgresql/data
+
+volumes:
+  wardogs-pg:

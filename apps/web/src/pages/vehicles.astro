@@ -1,0 +1,27 @@
+---
+import Base from "../layouts/Base.astro";
+import catalog from "../data/catalog.json";
+---
+<Base title="Техника — WARDOGS СНГ">
+  <p class="eyebrow">Из файлов игры</p>
+  <h1>Техника</h1>
+  <p class="lead">Скорость, места и прочность. Это карточки техники, не цены магазина.</p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Машина</th><th>Скорость</th><th>Места</th><th>Прочность</th><th>Вооружение</th></tr>
+      </thead>
+      <tbody>
+        {catalog.vehicles.map((vehicle) => (
+          <tr>
+            <td>{vehicle.name}</td>
+            <td>{vehicle.speed ?? "—"}</td>
+            <td>{vehicle.seats ?? "—"}</td>
+            <td>{vehicle.health ?? "—"}</td>
+            <td>{vehicle.weapons.join(", ") || "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</Base>

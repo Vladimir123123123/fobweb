@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "workspaces": ["apps/web", "apps/api"],
+  "scripts": {
+    "catalog": "node scripts/import-catalog.mjs",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @wd/api\" \"npm run dev -w @wd/web\"",
+    "db": "node scripts/ensure-db.mjs",
+    "dev:web": "npm run dev -w @wd/web",
+    "dev:api": "npm run dev -w @wd/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

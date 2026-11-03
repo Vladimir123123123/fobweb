@@ -1,0 +1,93 @@
+---
+import Base from "../layouts/Base.astro";
+import catalog from "../data/catalog.json";
+import { KIND_LABEL, ROLE_LABEL, SUBTITLE, gunMark, itemArt } from "../scripts/guns";
+
+type Gun = {
+  id: string;
+  name: string;
+  rpm: number | null;
+  range: number | null;
+  weight: number | null;
+  price: number | null;
+  archetype: string;
+  subtitle: string;
+  unlock: { role: string; level: number } | null;
+  icon?: string;
+};
+
+function share(primary: string, side: string) {
+  return Buffer.from(JSON.stringify({ w: primary, s: side, h: "", a: "", v: "", b: "", t: {}, u: {} })).toString("base64url");
+}
+
+const rows = [
+  ...(catalog.weapons as Gun[]).map((gun) => ({ ...gun, side: false })),
+  ...(catalog.sidearms as Gun[]).map((gun) => ({ ...gun, side: true })),
+].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+
+const kinds = Object.keys(KIND_LABEL).filter((kind) => rows.some((gun) => gun.archetype === kind));
+const money = (value: number | null) => value === null ? "нет цены" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
+---
+<Base title="Оружие — WARDOGS СНГ" description="Оружие из файлов игры: тип, темп, дальность, вес и цена.">
+  <div class="page-head">
+    <div>
+      <h1>Оружие</h1>
+      <p class="lead">Основное и пистолеты из файлов билда {catalog.gameBuild}. Цена — минимальная у торговца.</p>
+    </div>
+    <p class="note" id="shown">Показано {rows.length} из {rows.length}</p>
+  </div>
+  <div class="db">
+    <aside class="cats">
+      <button class="on" type="button" data-kind="">Все <span>{rows.length}</span></button>
+      {kinds.map((kind) => (
+        <button type="button" data-kind={kind}>{KIND_LABEL[kind]} <span>{rows.filter((gun) => gun.archetype === kind).length}</span></button>
+      ))}
+    </aside>
+    <div>
+      <input id="weapon-q" placeholder="Поиск: оружие..." />
+      <div class="whead">
+        <span></span><span>Название</span><span>Тип</span><span>Темп</span><span>Дальность</span><span>Цена</span>
+      </div>
+      <div id="weapon-rows">
+        {rows.map((gun) => (
+          <a class="wrow" href={`/calculator?k=${share(gun.side ? "" : gun.id, gun.side ? gun.id : "")}`} data-kind={gun.archetype} data-q={`${gun.name} ${gun.subtitle} ${SUBTITLE[gun.subtitle] ?? ""} ${KIND_LABEL[gun.archetype] ?? ""}`.toLowerCase()}>
+            <span class="pic" set:html={itemArt(gun.icon, gunMark(gun.archetype))} />
+            <span>
+              <strong>{gun.name}</strong>
+              <small>{SUBTITLE[gun.subtitle] ?? gun.subtitle}{gun.unlock ? ` · ${ROLE_LABEL[gun.unlock.role] ?? gun.unlock.role} ${gun.unlock.level}` : ""}{gun.weight !== null ? ` · ${gun.weight} кг` : ""}</small>
+            </span>
+            <span>{KIND_LABEL[gun.archetype] ?? gun.archetype}</span>
+            <span>{gun.rpm ?? "—"}</span>
+            <span>{gun.range ?? "—"}</span>
+            <span class="price">{money(gun.price)}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </div>
+</Base>
+<script>
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>(".cats button")];
+  const rows = [...document.querySelectorAll<HTMLAnchorElement>(".wrow")];
+  const input = document.querySelector<HTMLInputElement>("#weapon-q")!;
+  const shown = document.querySelector("#shown")!;
+  let kind = "";
+  function apply() {
+    const query = input.value.trim().toLowerCase();
+    let visible = 0;
+    for (const row of rows) {
+      const ok = (!kind || row.dataset.kind === kind) && row.dataset.q!.includes(query);
+      row.hidden = !ok;
+      if (ok) visible += 1;
+    }
+    shown.textContent = `Показано ${visible} из ${rows.length}`;
+  }
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      kind = button.dataset.kind ?? "";
+      for (const item of buttons) item.classList.toggle("on", item === button);
+      apply();
+    });
+  }
+  input.addEventListener("input", apply);
+</script>

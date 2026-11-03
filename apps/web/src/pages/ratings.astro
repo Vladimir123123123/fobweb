@@ -1,0 +1,86 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Рейтинг СНГ — WARDOGS СНГ">
+  <p class="eyebrow">Игроки со Steam</p>
+  <h1>Рейтинг СНГ</h1>
+  <p class="lead">Место в таблице у тех, кто вошёл через Steam и не скрыл профиль. Цифра — из последнего снимка сезона.</p>
+  <div class="row">
+    <label>Сортировка
+      <select id="sort">
+        <option value="level">Уровень</option>
+        <option value="xp">Опыт</option>
+        <option value="value">Стоимость</option>
+        <option value="cash">Деньги</option>
+        <option value="gold">Золото</option>
+        <option value="unlocks">Открытия</option>
+        <option value="assault">Штурм</option>
+        <option value="medic">Медик</option>
+        <option value="recon">Разведка</option>
+        <option value="support">Поддержка</option>
+        <option value="driver">Водитель</option>
+        <option value="pilot">Пилот</option>
+      </select>
+    </label>
+    <label>Поиск<input id="q" placeholder="Ник" /></label>
+    <button class="btn" id="me" type="button">Показать меня</button>
+  </div>
+  <p class="note" id="rating-note"></p>
+  <div class="scroll panel">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Игрок</th><th>Уровень</th><th>Опыт</th><th>Стоимость</th><th>Деньги</th><th>Золото</th><th>Открытия</th>
+          <th>Ш</th><th>М</th><th>Р</th><th>П</th><th>В</th><th>Пт</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</Base>
+<script>
+  const sort = document.querySelector<HTMLSelectElement>("#sort")!;
+  const q = document.querySelector<HTMLInputElement>("#q")!;
+  const rows = document.querySelector("#rows")!;
+  const note = document.querySelector("#rating-note")!;
+  const money = (value: number | null) => value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
+  async function load() {
+    const response = await fetch(`/api/ratings?sort=${sort.value}&q=${encodeURIComponent(q.value)}`);
+    if (!response.ok) {
+      note.textContent = "Рейтинг сейчас не открывается.";
+      return;
+    }
+    const data = await response.json();
+    note.textContent = `Сезон ${data.season}. Строк: ${data.players.length}.`;
+    rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => `
+      <tr id="p-${player.steam_id}">
+        <td>${index + 1}</td>
+        <td><a href="/p?id=${player.steam_id}">${player.persona ?? player.steam_id}</a></td>
+        <td>${player.wardog_level ?? "—"}</td>
+        <td>${player.xp ?? "—"}</td>
+        <td>${money(player.account_value as number | null)}</td>
+        <td>${money(player.cash as number | null)}</td>
+        <td>${player.gold ?? "—"}</td>
+        <td>${player.unlocks ?? "—"}</td>
+        <td>${player.role_assault ?? "—"}</td>
+        <td>${player.role_medic ?? "—"}</td>
+        <td>${player.role_recon ?? "—"}</td>
+        <td>${player.role_support ?? "—"}</td>
+        <td>${player.role_driver ?? "—"}</td>
+        <td>${player.role_pilot ?? "—"}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="14">Пока нет снимков. Топ заполнится после синхронизации вошедших игроков.</td></tr>`;
+  }
+  sort.addEventListener("change", load);
+  q.addEventListener("change", load);
+  document.querySelector("#me")?.addEventListener("click", async () => {
+    const me = await fetch("/api/me").then((response) => response.json()).catch(() => null);
+    const id = me?.user?.steam_id;
+    if (!id) {
+      location.href = "/auth/steam?next=/ratings";
+      return;
+    }
+    document.getElementById(`p-${id}`)?.scrollIntoView({ block: "center" });
+  });
+  load();
+</script>

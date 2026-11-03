@@ -1,0 +1,62 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Калькулятор сборки — WARDOGS СНГ" description="Сборка в окне торговца: слот, список, цена и вес из файлов игры.">
+  <section class="vendor">
+    <header class="vendor-top">
+      <div>
+        <p class="eyebrow">Equipment Vendor</p>
+        <h1>Торговец</h1>
+      </div>
+      <div class="vendor-cash">
+        <span>Сумма комплекта</span>
+        <b id="price">$0</b>
+      </div>
+    </header>
+    <div class="vendor-tabs" id="vendor-tabs">
+      <button type="button" class="on" data-tab="overview">Обзор</button>
+      <button type="button" data-tab="guns">Оружие</button>
+      <button type="button" data-tab="gear">Снаряжение</button>
+      <button type="button" data-tab="mods">Обвесы</button>
+    </div>
+    <div class="vendor-body">
+      <div class="racks" id="racks"></div>
+      <div class="vendor-main">
+        <div class="shop-tools" id="shop-tools">
+          <div id="shop-chips"></div>
+          <input id="shop-q" placeholder="Поиск у торговца..." />
+        </div>
+        <div class="shop" id="shop"></div>
+      </div>
+    </div>
+    <footer class="vendor-bar">
+      <div class="stat"><b id="weight">0 кг</b><span>Вес</span></div>
+      <div class="stat"><b id="class">—</b><span>Класс нагрузки</span></div>
+      <div class="stat"><b id="speed">—</b><span>Скорость от веса</span></div>
+      <button class="btn" id="copy" type="button">Скопировать ссылку</button>
+    </footer>
+  </section>
+  <p class="note" id="gaps"></p>
+  <div class="sr" hidden>
+    <select id="weapon"></select>
+    <select id="sidearm"></select>
+    <select id="helmet"></select>
+    <select id="armor"></select>
+    <select id="vest"></select>
+    <select id="backpack"></select>
+    <div id="slots"></div>
+    <div id="side-slots"></div>
+  </div>
+  <section class="panel publish">
+    <strong>Топ сезона</strong>
+    <p>Название увидят в списке сборок. Полезность, комментарии и разборы оставляют другие игроки. Сезон записывается в момент публикации.</p>
+    <form class="inline" id="publish-form">
+      <input id="build-title" maxlength="60" placeholder="Название сборки" />
+      <button class="btn" type="submit">В топ сезона</button>
+    </form>
+    <p class="note" id="publish-note"><a href="/builds">Смотреть топ</a></p>
+  </section>
+</Base>
+<script>
+  import "../scripts/calculator.ts";
+</script>
