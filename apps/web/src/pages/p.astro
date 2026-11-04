@@ -6,7 +6,9 @@ import Base from "../layouts/Base.astro";
 </Base>
 <script>
   const root = document.querySelector("#profile")!;
-  const id = new URLSearchParams(location.search).get("id") ?? "";
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id") ?? "";
+  const sync = params.get("sync") ?? "";
   function money(value: number | null) {
     return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
   }
@@ -31,10 +33,21 @@ import Base from "../layouts/Base.astro";
       const user = profile.user;
       const latest = profile.history.at(-1);
       const mine = me.user?.steam_id === id;
+      const empty = !profile.history.length;
       const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
+      const syncNote = sync === "game_running"
+        ? "Закрой WARDOGS и войди ещё раз: пока игра открыта, цифры не отдаются."
+        : sync === "empty" || empty
+          ? "Steam не отдаёт уровень и роли. Цифры появятся после входа, когда игра отдаст снимок карьеры."
+          : sync === "access_denied"
+            ? "Вход отменён."
+            : sync
+              ? "Игра не отдала цифры. Закрой её и войди ещё раз."
+              : "";
       root.innerHTML = `
         <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
         <p>Steam ${user.steam_id}${user.country ? ` · ${user.country}` : ""}${user.discord_name ? ` · Discord ${user.discord_name}` : ""}</p>
+        ${syncNote ? `<p class="note" id="sync-note">${syncNote}</p>` : `<p class="note" id="sync-note"></p>`}
         <div class="stats">
           <div class="stat"><b>${latest?.wardog_level ?? "—"}</b><span>Уровень</span></div>
           <div class="stat"><b>${num(latest?.xp)}</b><span>Опыт</span></div>
@@ -50,9 +63,10 @@ import Base from "../layouts/Base.astro";
           <div class="stat"><b>${latest?.role_pilot ?? "—"}</b><span>Пилот</span></div>
         </div>
         ${chart(profile.history)}
-        <p class="note">Снимков: ${profile.history.length}. Цифры игрока: <a href="https://wardogstracker.gg/profile/${id}">WARDOGS Tracker</a>.</p>
+        <p class="note">Снимков: ${profile.history.length}.</p>
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
+          <button class="btn small" id="resync" type="button">Обновить цифры</button>
           <label><input id="cis" type="checkbox" ${user.cis_opt_in ? "checked" : ""}/> Участвовать в топе СНГ</label>
           <label><input id="hide" type="checkbox" ${user.hide_leaderboard ? "checked" : ""}/> Скрыть из топа</label>
           ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : `<span class="note">Привязка Discord на сервере выключена. На вход она не влияет.</span>`}
@@ -70,6 +84,23 @@ import Base from "../layouts/Base.astro";
       };
       document.querySelector("#cis")?.addEventListener("change", save);
       document.querySelector("#hide")?.addEventListener("change", save);
+      document.querySelector("#resync")?.addEventListener("click", async () => {
+        const note = document.querySelector("#sync-note")!;
+        note.textContent = "Обновляю…";
+        const response = await fetch("/api/me/sync", { method: "POST" });
+        if (response.status === 401) {
+          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          return;
+        }
+        const body = await response.json().catch(() => ({}));
+        if (body.saved) {
+          location.href = `/p?id=${id}`;
+          return;
+        }
+        note.textContent = body.careerConnect
+          ? "Закрой WARDOGS и войди ещё раз — тогда игра отдаст снимок."
+          : "Steam не отдаёт эти цифры. Нужен вход, при котором игра сама отдаёт снимок карьеры.";
+      });
     }
   }
 </script>

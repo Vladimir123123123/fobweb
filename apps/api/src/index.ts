@@ -283,7 +283,7 @@ app.get("/auth/steam/callback", async (request, reply) => {
   const steamId = await verifySteamLogin(request.query as Record<string, unknown>);
   if (!steamId) return reply.code(401).type("text/plain").send("Steam не подтвердил вход.");
   await upsertUser(steamId);
-  await pullPublicCareer(steamId);
+  const saved = await pullPublicCareer(steamId);
   const cookie = [
     `wd_session=${createSession(steamId)}`,
     "Path=/",
@@ -299,7 +299,8 @@ app.get("/auth/steam/callback", async (request, reply) => {
   const target = next ? decodeURIComponent(next.slice("wd_next=".length)) : "/";
   const where = target.startsWith("/") && !target.startsWith("//") ? target : "/";
   reply.raw.setHeader("Set-Cookie", [cookie.join("; "), "wd_next=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"]);
-  return reply.redirect(`${config.siteOrigin}${where}`);
+  if (saved) return reply.redirect(`${config.siteOrigin}${where}`);
+  return reply.redirect(`${config.siteOrigin}/p?id=${steamId}&sync=empty`);
 });
 
 app.post("/auth/logout", async (_request, reply) => {
@@ -363,7 +364,15 @@ app.get("/api/me", async (request) => {
     user: rows[0] ?? null,
     admin,
     discordLink: Boolean(config.discordId && config.discordSecret),
+    careerConnect: Boolean(config.trackerKey && config.trackerClientId),
   };
+});
+
+app.post("/api/me/sync", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  if (!steamId) return reply.code(401).send({ error: "steam" });
+  const saved = await pullPublicCareer(steamId);
+  return { ok: true, saved, careerConnect: Boolean(config.trackerKey && config.trackerClientId) };
 });
 
 app.patch("/api/me", async (request, reply) => {
