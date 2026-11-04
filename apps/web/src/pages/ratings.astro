@@ -51,7 +51,15 @@ import Base from "../layouts/Base.astro";
       return;
     }
     const data = await response.json();
-    note.textContent = `Сезон ${data.season}. Строк: ${data.players.length}.`;
+    const sync = new URLSearchParams(location.search).get("sync");
+    const syncNote = sync === "game_running"
+      ? "Закрой WARDOGS и войди ещё раз: пока игра открыта, цифры не отдаются."
+      : sync === "access_denied"
+        ? "Вход отменён."
+        : sync
+          ? "Игра не отдала цифры. Закрой её и войди ещё раз."
+          : "";
+    note.textContent = syncNote || `Сезон ${data.season}. Строк: ${data.players.length}.`;
     rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => `
       <tr id="p-${player.steam_id}">
         <td>${index + 1}</td>

@@ -76,6 +76,64 @@ function whole(value: unknown, max: number) {
   return number;
 }
 
+function readCookie(header: string | undefined, name: string) {
+  return (header ?? "").split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) ?? "";
+}
+
+function roleLevel(stats: { roles?: Record<string, { level?: unknown }> } | null, name: string) {
+  return whole(stats?.roles?.[name]?.level, 1000) ?? null;
+}
+
+async function saveCareer(steamId: string, stats: {
+  wardogLevel?: unknown;
+  careerXp?: unknown;
+  cash?: unknown;
+  gold?: unknown;
+  unlocks?: unknown;
+  accountValue?: unknown;
+  roles?: Record<string, { level?: unknown }>;
+} | null, source: string, openSession: boolean) {
+  if (!stats) return false;
+  const level = whole(stats.wardogLevel, 1000);
+  const xp = whole(stats.careerXp, 50_000_000_000);
+  if (level === undefined || xp === undefined) return false;
+  const value = whole(stats.accountValue, 50_000_000_000);
+  await sql`
+    INSERT INTO snapshots (
+      steam_id, season, wardog_level, xp, account_value, cash, gold, unlocks,
+      role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source
+    ) VALUES (
+      ${steamId}, ${config.season}, ${level}, ${xp}, ${value ?? null},
+      ${whole(stats.cash, 50_000_000_000) ?? null}, ${whole(stats.gold, 1_000_000) ?? null}, ${whole(stats.unlocks, 100_000) ?? null},
+      ${roleLevel(stats, "assault")}, ${roleLevel(stats, "medic")}, ${roleLevel(stats, "recon")},
+      ${roleLevel(stats, "support")}, ${roleLevel(stats, "driver")}, ${roleLevel(stats, "pilot")}, ${source}
+    )
+  `;
+  if (openSession) {
+    await sql`
+      INSERT INTO sync_sessions (steam_id, status, expires_at, updated_at)
+      VALUES (${steamId}, 'active', DATE_ADD(NOW(), INTERVAL 3 HOUR), NOW())
+      ON DUPLICATE KEY UPDATE status = 'active', expires_at = DATE_ADD(NOW(), INTERVAL 3 HOUR), updated_at = NOW()
+    `;
+  }
+  return true;
+}
+
+async function refreshCareers() {
+  if (!config.trackerKey) return;
+  const due = await sql<{ steam_id: string }[]>`
+    SELECT steam_id FROM sync_sessions WHERE status = 'active' AND expires_at > NOW() LIMIT 30
+  `;
+  for (const row of due) {
+    const response = await fetch(`https://wardogstracker.gg/api/v1/connect/players/${row.steam_id}`, {
+      headers: { authorization: `Bearer ${config.trackerKey}` },
+    });
+    if (!response.ok) continue;
+    const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
+    await saveCareer(row.steam_id, body.player?.stats ?? null, "refresh", false);
+  }
+}
+
 async function upsertUser(steamId: string) {
   const profile = await steamProfile(steamId);
   const opted = cisByCountry(profile.country);
@@ -118,11 +176,56 @@ app.get("/api/health", async () => {
 app.get("/auth/steam", async (request, reply) => {
   const next = text((request.query as Record<string, unknown>).next, 200);
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
-  reply.header(
-    "set-cookie",
-    `wd_next=${encodeURIComponent(safeNext)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${config.secureCookie ? "; Secure" : ""}`,
-  );
+  const secure = config.secureCookie ? "; Secure" : "";
+  const nextCookie = `wd_next=${encodeURIComponent(safeNext)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${secure}`;
+  if (config.trackerClientId && config.trackerKey) {
+    const state = randomBytes(16).toString("hex");
+    reply.raw.setHeader("Set-Cookie", [
+      nextCookie,
+      `wd_wdt=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${secure}`,
+    ]);
+    const url = new URL("https://wardogstracker.gg/api/connect");
+    url.searchParams.set("client_id", config.trackerClientId);
+    url.searchParams.set("redirect_uri", `${config.siteOrigin}/auth/wardogs`);
+    url.searchParams.set("state", state);
+    return reply.redirect(url.toString());
+  }
+  reply.header("set-cookie", nextCookie);
   return reply.redirect(steamLoginUrl(`${config.siteOrigin}/auth/steam/callback`, config.siteOrigin));
+});
+
+app.get("/auth/wardogs", async (request, reply) => {
+  const query = request.query as Record<string, unknown>;
+  const state = text(query.state, 80);
+  if (!state || state !== readCookie(request.headers.cookie, "wd_wdt")) {
+    return reply.code(400).type("text/plain").send("Вход устарел. Открой сайт и войди ещё раз.");
+  }
+  const failure = text(query.error_code, 40) || text(query.error, 40);
+  if (failure) return reply.redirect(`${config.siteOrigin}/ratings?sync=${encodeURIComponent(failure)}`);
+  const code = text(query.code, 200);
+  const response = await fetch("https://wardogstracker.gg/api/v1/connect/token", {
+    method: "POST",
+    headers: { authorization: `Bearer ${config.trackerKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ code, redirect_uri: `${config.siteOrigin}/auth/wardogs` }),
+  });
+  const traded = response.ok ? await response.json() as { steamId?: string; player?: { stats?: Parameters<typeof saveCareer>[1] } } : null;
+  if (!traded?.steamId || !/^\d{17}$/.test(traded.steamId)) {
+    return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
+  }
+  await upsertUser(traded.steamId);
+  const saved = await saveCareer(traded.steamId, traded.player?.stats ?? null, "login", true);
+  const secure = config.secureCookie ? "; Secure" : "";
+  const next = readCookie(request.headers.cookie, "wd_next");
+  const target = next ? decodeURIComponent(next) : "/ratings";
+  const where = target.startsWith("/") && !target.startsWith("//") ? target : "/ratings";
+  reply.raw.setHeader("Set-Cookie", [
+    `wd_session=${createSession(traded.steamId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${14 * 24 * 3600}${secure}`,
+    `wd_next=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
+    `wd_wdt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
+  ]);
+  const back = new URL(where, config.siteOrigin);
+  if (!saved) back.searchParams.set("sync", "empty");
+  return reply.redirect(back.toString());
 });
 
 app.get("/auth/steam/callback", async (request, reply) => {
@@ -907,6 +1010,9 @@ setInterval(() => {
     app.log.error(error);
   });
 }, 60_000).unref();
+setInterval(() => {
+  refreshCareers().catch((error) => app.log.error(error));
+}, 15 * 60 * 1000).unref();
 
 await migrate();
 dumpDatabase().catch((error) => app.log.error(error));

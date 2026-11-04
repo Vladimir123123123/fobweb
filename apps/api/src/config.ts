@@ -22,6 +22,8 @@ export const config = {
   steamKey: (process.env.STEAM_WEB_API_KEY ?? "").trim(),
   season: process.env.GAME_SEASON || "02",
   syncKey: (process.env.SYNC_INGEST_KEY ?? "").trim(),
+  trackerKey: (process.env.TRACKER_KEY ?? "").trim(),
+  trackerClientId: (process.env.TRACKER_CLIENT_ID ?? "").trim(),
   discordId: (process.env.DISCORD_CLIENT_ID ?? "").trim(),
   discordSecret: (process.env.DISCORD_CLIENT_SECRET ?? "").trim(),
   databaseUrl: required("DATABASE_URL"),
