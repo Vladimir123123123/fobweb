@@ -30,6 +30,7 @@ import Base from "../layouts/Base.astro";
           <div class="squad-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</div>
           <div>
             <h2>[${esc(squad.tag)}] ${esc(squad.name)}</h2>
+            <p><span class="squad-status ${squad.status === "approved" ? "approved" : squad.status === "rejected" ? "rejected" : "pending"}" style="position:static">${squad.status === "approved" ? "Одобрено" : squad.status === "rejected" ? "Отклонён" : "На модерации"}</span></p>
             <p>${squad.members} в составе · <a href="/p?id=${squad.owner_steam_id}">${esc(squad.owner_name ?? "владелец")}</a>${squad.closed ? " · набор закрыт" : ""}</p>
             <span class="squad-label">Описание</span>
             <p class="squad-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>

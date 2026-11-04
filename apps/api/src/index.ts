@@ -507,11 +507,11 @@ app.get("/api/media/:file", async (request, reply) => {
 app.get("/api/squads", async (request) => {
   const steamId = steamIdOf(request);
   const rows = await sql`
-    SELECT sq.id, sq.name, sq.tag, sq.closed, sq.about, sq.criteria, sq.discord_url, sq.logo_path, u.persona AS owner_name,
+    SELECT sq.id, sq.name, sq.tag, sq.closed, sq.status, sq.about, sq.criteria, sq.discord_url, sq.logo_path, u.persona AS owner_name,
            (SELECT CAST(COUNT(*) AS SIGNED) FROM squad_members m WHERE m.squad_id = sq.id AND m.status = 'member') AS members
     FROM squads sq
     JOIN users u ON u.steam_id = sq.owner_steam_id
-    WHERE sq.status = 'approved'
+    WHERE sq.status = 'approved' OR sq.owner_steam_id = ${steamId ?? ""}
     ORDER BY sq.created_at DESC
     LIMIT 100
   `;
@@ -519,8 +519,8 @@ app.get("/api/squads", async (request) => {
     ? await sql`SELECT squad_id, status, role FROM squad_members WHERE steam_id = ${steamId}`
     : [];
   const deskRows = steamId
-    ? await sql<{ id: number; name: string; tag: string; status: string; about: string; criteria: string; discord_url: string; logo_path: string | null; banner_path: string | null }[]>`
-      SELECT id, name, tag, status, about, criteria, discord_url, logo_path, banner_path
+    ? await sql<{ id: number; name: string; tag: string; status: string; about: string; criteria: string; discord_url: string; closed: boolean; logo_path: string | null; banner_path: string | null }[]>`
+      SELECT id, name, tag, status, about, criteria, discord_url, closed, logo_path, banner_path
       FROM squads
       WHERE owner_steam_id = ${steamId}
       LIMIT 1
@@ -601,14 +601,23 @@ app.post("/api/squads/:id/profile", async (request, reply) => {
   if (!steamId || !Number.isInteger(id)) return reply.code(401).send({ error: "steam" });
   const body = asObject(request.body);
   if (!body) return reply.code(400).send({ error: "bad_request" });
+  const name = text(body.name, 32);
+  const tag = text(body.tag, 6).toUpperCase();
   const about = text(body.about, 700);
   const criteria = text(body.criteria, 700);
   const discordRaw = text(body.discord, 200);
   const discord = discordRaw ? discordInvite(discordRaw) : "";
-  if (about.length < 20 || criteria.length < 10 || (discordRaw && !discord)) return reply.code(400).send({ error: "bad_request" });
+  const closed = body.closed === true;
+  if (name.length < 3 || !/^[A-Z0-9]{2,5}$/.test(tag) || about.length < 20 || criteria.length < 10 || (discordRaw && !discord)) {
+    return reply.code(400).send({ error: "bad_request" });
+  }
   const owned = await sql`SELECT id FROM squads WHERE id = ${id} AND owner_steam_id = ${steamId}`;
   if (!owned.length) return notFound(reply);
-  await sql`UPDATE squads SET about = ${about}, criteria = ${criteria}, discord_url = ${discord} WHERE id = ${id}`;
+  await sql`
+    UPDATE squads
+    SET name = ${name}, tag = ${tag}, about = ${about}, criteria = ${criteria}, discord_url = ${discord}, closed = ${closed}
+    WHERE id = ${id}
+  `;
   return { ok: true };
 });
 

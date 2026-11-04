@@ -5,7 +5,6 @@ import Base from "../layouts/Base.astro";
   <p class="eyebrow">Отряд со Steam</p>
   <h1>Сквады</h1>
   <p class="lead">Карточка сквада: логотип, описание, критерии набора, Discord и состав. Один игрок состоит в одном скваде.</p>
-  <div id="desk"></div>
   <form class="squad-form" id="create">
     <input id="name" placeholder="Название" maxlength="32" />
     <input id="tag" placeholder="ТЕГ" maxlength="5" />
@@ -14,11 +13,10 @@ import Base from "../layouts/Base.astro";
     <button class="btn" type="submit">Создать</button>
   </form>
   <p class="note" id="squad-note"></p>
-  <div id="list"></div>
+  <div id="list" class="squad-grid"></div>
 </Base>
 <script>
   const list = document.querySelector("#list")!;
-  const desk = document.querySelector("#desk")!;
   const note = document.querySelector("#squad-note")!;
   const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
 
@@ -59,7 +57,7 @@ import Base from "../layouts/Base.astro";
       return;
     }
     const data = await response.json();
-    const mine = new Map((data.mine as Array<{ squad_id: number; status: string }>).map((row) => [row.squad_id, row.status]));
+    const mine = new Map((data.mine as Array<{ squad_id: number; status: string; role: string }>).map((row) => [row.squad_id, row]));
     const owned = data.desk as {
       id: number;
       name: string;
@@ -68,94 +66,93 @@ import Base from "../layouts/Base.astro";
       about: string;
       criteria: string;
       discord_url: string;
-      banner_path: string | null;
+      closed: boolean;
       pending: Array<{ kind: string }>;
     } | null;
-    if (owned) {
-      const waitingLogo = owned.pending.some((item) => item.kind === "logo");
-      const waitingBanner = owned.pending.some((item) => item.kind === "banner");
-      const state = owned.status === "approved" ? "Сквад в списке." : owned.status === "rejected" ? "Сквад отклонён." : "Сквад ждёт проверки.";
-      desk.innerHTML = `
-        <article class="panel">
-          <strong>[${esc(owned.tag)}] ${esc(owned.name)}</strong>
-          <p>${state} ${owned.banner_path ? "Баннер уже на главной." : "Баннера на главной ещё нет."} ${waitingLogo ? "Новый логотип ждёт проверки." : ""} ${waitingBanner ? "Новый баннер ждёт проверки, на главной остаётся прежний." : ""}</p>
-          <form id="profile-form" class="squad-form">
+    if (owned) document.querySelector("#create")?.setAttribute("hidden", "");
+    else document.querySelector("#create")?.removeAttribute("hidden");
+    const stateName = (status: string) => status === "approved" ? "Одобрено" : status === "rejected" ? "Отклонён" : "На модерации";
+    const stateClass = (status: string) => status === "approved" ? "approved" : status === "rejected" ? "rejected" : "pending";
+    type SquadCard = { id: number; name: string; tag: string; status: string; closed: boolean; members: number; owner_name: string | null; logo: string; about: string; criteria: string; discord_url: string };
+    list.innerHTML = (data.squads as SquadCard[]).map((squad) => {
+      const leader = owned?.id === squad.id;
+      const waitingLogo = leader && owned.pending.some((item) => item.kind === "logo");
+      const waitingBanner = leader && owned.pending.some((item) => item.kind === "banner");
+      return `
+      <article class="squad-tile">
+        <a class="squad-square" href="/squad?id=${squad.id}">
+          <span class="squad-status ${stateClass(squad.status)}">${stateName(squad.status)}</span>
+          <span class="squad-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</span>
+          <span class="squad-face">
+            <strong>[${esc(squad.tag)}] ${esc(squad.name)}</strong>
+            <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")}${squad.closed ? " · набор закрыт" : ""}</p>
+          </span>
+        </a>
+        <div class="squad-actions">
+          ${squad.discord_url ? `<a class="btn ghost small" href="${esc(squad.discord_url)}">Discord</a>` : ""}
+          ${leader ? `<button class="btn small" data-edit type="button">Редактировать</button>` : squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">${mine.get(squad.id)?.status === "pending" ? "Заявка отправлена" : "Подать заявку"}</button>`}
+        </div>
+        ${leader ? `
+          <form id="profile-form" class="squad-form squad-edit" hidden>
+            <input id="profile-name" maxlength="32" value="${esc(owned.name)}" />
+            <input id="profile-tag" maxlength="5" value="${esc(owned.tag)}" />
             <label>Описание<textarea id="profile-about" maxlength="700">${esc(owned.about ?? "")}</textarea></label>
             <label>Критерии набора<textarea id="profile-criteria" maxlength="700">${esc(owned.criteria ?? "")}</textarea></label>
             <label>Discord<input id="profile-discord" placeholder="https://discord.gg/..." value="${esc(owned.discord_url)}" /></label>
+            <label class="check"><input id="profile-closed" type="checkbox" ${owned.closed ? "checked" : ""}/> Набор закрыт</label>
             <button class="btn small" type="submit">Сохранить карточку</button>
-          </form>
-          <form id="logo-form" class="inline">
-            <input id="logo-file" type="file" accept="image/jpeg,image/png,image/webp" />
-            <button class="btn small" type="submit">Отправить логотип</button>
-          </form>
-          <form id="banner-form" class="inline">
-            <input id="banner-file" type="file" accept="image/jpeg,image/png,image/webp" />
-            <input id="banner-discord" placeholder="https://discord.gg/..." value="${esc(owned.discord_url)}" />
-            <button class="btn small" type="submit">Отправить баннер</button>
-          </form>
-        </article>
-      `;
-      document.querySelector("#create")?.setAttribute("hidden", "");
-      desk.querySelector("#profile-form")?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const response = await fetch(`/api/squads/${owned.id}/profile`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            about: (document.querySelector("#profile-about") as HTMLTextAreaElement).value,
-            criteria: (document.querySelector("#profile-criteria") as HTMLTextAreaElement).value,
-            discord: (document.querySelector("#profile-discord") as HTMLInputElement).value,
-          }),
-        });
-        note.textContent = response.ok ? "Карточка сохранена." : "Описание от 20 символов, критерии от 10, Discord — ссылка discord.gg.";
-        if (response.ok) load();
+            <p class="note">${waitingLogo ? "Новый логотип на модерации. " : ""}${waitingBanner ? "Новый баннер на модерации." : ""}</p>
+            <label>Логотип<input id="logo-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+            <button class="btn ghost small" id="logo-send" type="button">Отправить логотип</button>
+            <label>Баннер<input id="banner-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+            <button class="btn ghost small" id="banner-send" type="button">Отправить баннер</button>
+          </form>` : ""}
+      </article>`;
+    }).join("") || "<p>Сквадов пока нет.</p>";
+    list.querySelector<HTMLButtonElement>("[data-edit]")?.addEventListener("click", () => {
+      list.querySelector("#profile-form")?.toggleAttribute("hidden");
+    });
+    list.querySelector("#profile-form")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!owned) return;
+      const response = await fetch(`/api/squads/${owned.id}/profile`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: (document.querySelector("#profile-name") as HTMLInputElement).value,
+          tag: (document.querySelector("#profile-tag") as HTMLInputElement).value,
+          about: (document.querySelector("#profile-about") as HTMLTextAreaElement).value,
+          criteria: (document.querySelector("#profile-criteria") as HTMLTextAreaElement).value,
+          discord: (document.querySelector("#profile-discord") as HTMLInputElement).value,
+          closed: (document.querySelector("#profile-closed") as HTMLInputElement).checked,
+        }),
       });
-      desk.querySelector("#logo-form")?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const file = (document.querySelector("#logo-file") as HTMLInputElement).files?.[0];
-        if (!file) return;
-        try {
-          note.textContent = await sendAsset(owned.id, "logo", file) ? "Логотип отправлен на проверку." : "Нужна картинка JPEG, PNG или WebP до 1,2 МБ.";
-          if (note.textContent.startsWith("Логотип")) load();
-        } catch {
-          note.textContent = "Нужна картинка JPEG, PNG или WebP до 1,2 МБ.";
-        }
-      });
-      desk.querySelector("#banner-form")?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const file = (document.querySelector("#banner-file") as HTMLInputElement).files?.[0];
-        const discord = (document.querySelector("#banner-discord") as HTMLInputElement).value;
-        if (!file) return;
-        try {
-          note.textContent = await sendAsset(owned.id, "banner", file, discord) ? "Баннер отправлен на проверку." : "Нужны картинка до 1,2 МБ и ссылка discord.gg.";
-          if (note.textContent.startsWith("Баннер")) load();
-        } catch {
-          note.textContent = "Нужна картинка JPEG, PNG или WebP до 1,2 МБ.";
-        }
-      });
-    } else {
-      desk.innerHTML = "";
-      document.querySelector("#create")?.removeAttribute("hidden");
-    }
-    list.innerHTML = data.squads.map((squad: { id: number; name: string; tag: string; closed: boolean; members: number; owner_name: string | null; logo: string; about: string; criteria: string; discord_url: string }) => `
-      <article class="panel squad-card">
-        <a class="squad-mark" href="/squad?id=${squad.id}">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</a>
-        <div>
-          <h2><a href="/squad?id=${squad.id}">[${esc(squad.tag)}] ${esc(squad.name)}</a></h2>
-          <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")}${squad.closed ? " · набор закрыт" : ""}</p>
-          <span class="squad-label">Описание</span>
-          <p class="squad-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>
-          <span class="squad-label">Критерии набора</span>
-          <p class="squad-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
-          <div class="squad-actions">
-            ${squad.discord_url ? `<a class="btn ghost small" href="${esc(squad.discord_url)}">Discord</a>` : ""}
-            <a class="btn ghost small" href="/squad?id=${squad.id}">Состав</a>
-            ${squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">${mine.get(squad.id) === "pending" ? "Заявка отправлена" : "Подать заявку"}</button>`}
-          </div>
-        </div>
-      </article>
-    `).join("") || "<p>Сквадов пока нет.</p>";
+      note.textContent = response.ok ? "Карточка сохранена." : "Название, тег из 2–5 букв, описание от 20 символов, критерии от 10.";
+      if (response.ok) load();
+    });
+    list.querySelector("#logo-send")?.addEventListener("click", async () => {
+      if (!owned) return;
+      const file = (document.querySelector("#logo-file") as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        note.textContent = await sendAsset(owned.id, "logo", file) ? "Логотип отправлен на модерацию." : "Нужна картинка JPEG, PNG или WebP до 1,2 МБ.";
+        if (note.textContent.startsWith("Логотип")) load();
+      } catch {
+        note.textContent = "Нужна картинка JPEG, PNG или WebP до 1,2 МБ.";
+      }
+    });
+    list.querySelector("#banner-send")?.addEventListener("click", async () => {
+      if (!owned) return;
+      const file = (document.querySelector("#banner-file") as HTMLInputElement).files?.[0];
+      const discord = (document.querySelector("#profile-discord") as HTMLInputElement).value;
+      if (!file) return;
+      try {
+        note.textContent = await sendAsset(owned.id, "banner", file, discord) ? "Баннер отправлен на модерацию." : "Нужны картинка до 1,2 МБ и ссылка discord.gg.";
+        if (note.textContent.startsWith("Баннер")) load();
+      } catch {
+        note.textContent = "Нужна картинка JPEG, PNG или WebP до 1,2 МБ.";
+      }
+    });
     list.querySelectorAll<HTMLButtonElement>("[data-join]").forEach((button) => {
       button.addEventListener("click", async () => {
         const response = await fetch(`/api/squads/${button.dataset.join}/join`, { method: "POST" });
