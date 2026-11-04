@@ -22,7 +22,7 @@ export const config = {
   discordId: (process.env.DISCORD_CLIENT_ID ?? "").trim(),
   discordSecret: (process.env.DISCORD_CLIENT_SECRET ?? "").trim(),
   databaseUrl: required("DATABASE_URL"),
-  port: Number(process.env.API_PORT ?? 3000),
+  port: Number(process.env.SERVER_PORT || process.env.API_PORT || 3000),
   secureCookie: siteOrigin.startsWith("https://"),
 };
 
