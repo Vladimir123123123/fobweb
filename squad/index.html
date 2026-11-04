@@ -1,28 +1,29 @@
-<!DOCTYPE html><html lang="ru"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Сквад — WARDOGS СНГ</title><meta name="description" content="Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam."><link rel="icon" href="/brand/logo.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap"><link rel="stylesheet" href="/_astro/b.Bli58J26.css"></head> <body data-metrika> <header class="topbar"> <div class="wrap top"> <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="">WARDOGS <em>СНГ</em></a> <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button> <nav class="nav" id="site-nav"> <a href="/calculator">Калькулятор</a> <a href="/builds">Сборки</a> <a href="/weapons">Оружие</a> <a href="/vehicles">Техника</a> <a href="/ratings">Рейтинг</a> <a href="/squads" aria-current="page">Сквады</a> <div class="account"> <a class="btn small" href="/discord">В Discord</a> <span id="account"></span> </div> </nav> </div> </header> <main class="wrap">  <div id="squad-page"><p>Загрузка сквада.</p></div>  </main> <footer class="wrap foot">
+<!DOCTYPE html><html lang="ru"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Сквад — WARDOGS СНГ</title><meta name="description" content="Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam."><link rel="icon" href="/brand/logo.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap"><link rel="stylesheet" href="/_astro/b.BsWFBMqE.css"></head> <body data-metrika> <header class="topbar"> <div class="wrap top"> <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="">WARDOGS <em>СНГ</em></a> <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button> <nav class="nav" id="site-nav"> <a href="/calculator">Калькулятор</a> <a href="/builds">Сборки</a> <a href="/weapons">Оружие</a> <a href="/vehicles">Техника</a> <a href="/ratings">Рейтинг</a> <a href="/squads" aria-current="page">Сквады</a> <div class="account"> <a class="btn small" href="/discord">В Discord</a> <span id="account"></span> </div> </nav> </div> </header> <main class="wrap">  <div id="squad-page"><p>Загрузка сквада.</p></div>  </main> <footer class="wrap foot">
 Неофициальный фан-сайт. Цифры предметов взяты из файлов игры, билд <span id="build">25937608</span>.
-</footer> <script type="module" src="/_astro/Base.astro_astro_type_script_index_0_lang.B6zepcOw.js"></script> </body> </html> <script type="module">const o=document.querySelector("#squad-page"),c=new URLSearchParams(location.search).get("id")??"",s=n=>n.replace(/[&<>"']/g,e=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[e]??e);if(!/^\d+$/.test(c))o.innerHTML="<h1>Такой страницы нет</h1>";else{const n=await fetch(`/api/squads/${c}`);if(!n.ok)o.innerHTML="<h1>Сквада нет</h1><p>Его не опубликовали или он ещё на проверке.</p>";else{const e=await n.json(),a=e.squad,i=e.members.map(t=>`
+</footer> <script type="module" src="/_astro/Base.astro_astro_type_script_index_0_lang.B6zepcOw.js"></script> </body> </html> <script type="module">const o=document.querySelector("#squad-page"),d=new URLSearchParams(location.search).get("id")??"",a=n=>n.replace(/[&<>"']/g,e=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[e]??e);if(!/^\d+$/.test(d))o.innerHTML="<h1>Такой страницы нет</h1>";else{const n=await fetch(`/api/squads/${d}`);if(!n.ok)o.innerHTML="<h1>Сквада нет</h1><p>Его не опубликовали или он ещё на проверке.</p>";else{const e=await n.json(),s=e.squad,i=e.members.map(t=>`
         <a href="/p?id=${t.steam_id}">
-          ${t.avatar?`<img src="${s(t.avatar)}" alt="" />`:`<span class="squad-mark" style="width:36px;height:36px;font-size:12px">${s((t.persona??"?").slice(0,1))}</span>`}
-          <span>${s(t.persona??t.steam_id)} · ${t.role==="leader"?"лидер":t.status==="pending"?"заявка":"в составе"}</span>
+          ${t.avatar?`<img src="${a(t.avatar)}" alt="" />`:`<span class="squad-mark" style="width:36px;height:36px;font-size:12px">${a((t.persona??"?").slice(0,1))}</span>`}
+          <span>${a(t.persona??t.steam_id)} · ${t.role==="leader"?"лидер":t.status==="pending"?"заявка":"в составе"}</span>
         </a>`).join("");o.innerHTML=`
         <p class="eyebrow"><a href="/squads">Сквады</a></p>
-        ${a.banner?`<img class="squad-banner" src="${s(a.banner)}" alt="" />`:""}
+        ${s.banner?`<img class="squad-banner" src="${a(s.banner)}" alt="" />`:""}
         <div class="squad-card open panel">
-          <div class="squad-mark">${a.logo?`<img src="${s(a.logo)}" alt="" />`:s(a.tag)}</div>
+          <div class="squad-mark">${s.logo?`<img src="${a(s.logo)}" alt="" />`:a(s.tag)}</div>
           <div>
-            <h2>[${s(a.tag)}] ${s(a.name)}</h2>
-            <p>${a.members} в составе · <a href="/p?id=${a.owner_steam_id}">${s(a.owner_name??"владелец")}</a>${a.closed?" · набор закрыт":""}</p>
+            <h2>[${a(s.tag)}] ${a(s.name)}</h2>
+            <p><span class="squad-status ${s.status==="approved"?"approved":s.status==="rejected"?"rejected":"pending"}" style="position:static">${s.status==="approved"?"Одобрено":s.status==="rejected"?"Отклонён":"На модерации"}</span></p>
+            <p>${s.members} в составе · <a href="/p?id=${s.owner_steam_id}">${a(s.owner_name??"владелец")}</a>${s.closed?" · набор закрыт":""}</p>
             <span class="squad-label">Описание</span>
-            <p class="squad-copy">${s(a.about||"Сквад ещё не заполнил описание.")}</p>
+            <p class="squad-copy">${a(s.about||"Сквад ещё не заполнил описание.")}</p>
             <span class="squad-label">Критерии набора</span>
-            <p class="squad-copy">${s(a.criteria||"Критерии не указаны.")}</p>
+            <p class="squad-copy">${a(s.criteria||"Критерии не указаны.")}</p>
             <div class="squad-actions">
-              ${a.discord_url?`<a class="btn small" href="${s(a.discord_url)}">Discord сквада</a>`:""}
-              ${a.closed?"":'<button class="btn small" id="join" type="button">Подать заявку</button>'}
+              ${s.discord_url?`<a class="btn small" href="${a(s.discord_url)}">Discord сквада</a>`:""}
+              ${s.closed?"":'<button class="btn small" id="join" type="button">Подать заявку</button>'}
             </div>
           </div>
         </div>
         <h2>Состав</h2>
         <div class="squad-roster">${i||"<p>В составе пока никого.</p>"}</div>
         <p class="note" id="squad-note"></p>
-      `,document.querySelector("#join")?.addEventListener("click",async()=>{const t=document.querySelector("#squad-note"),d=await fetch(`/api/squads/${c}/join`,{method:"POST"});t.textContent=d.ok?"Заявка отправлена.":"Нужен вход через Steam, и вы ещё не состоите в другом скваде.",d.status===401&&(location.href=`/auth/steam?next=${encodeURIComponent(location.pathname+location.search)}`)})}}</script>
+      `,document.querySelector("#join")?.addEventListener("click",async()=>{const t=document.querySelector("#squad-note"),c=await fetch(`/api/squads/${d}/join`,{method:"POST"});t.textContent=c.ok?"Заявка отправлена.":"Нужен вход через Steam, и вы ещё не состоите в другом скваде.",c.status===401&&(location.href=`/auth/steam?next=${encodeURIComponent(location.pathname+location.search)}`)})}}</script>
