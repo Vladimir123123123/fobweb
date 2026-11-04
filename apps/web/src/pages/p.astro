@@ -31,17 +31,26 @@ import Base from "../layouts/Base.astro";
       const user = profile.user;
       const latest = profile.history.at(-1);
       const mine = me.user?.steam_id === id;
+      const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
       root.innerHTML = `
         <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
         <p>Steam ${user.steam_id}${user.country ? ` · ${user.country}` : ""}${user.discord_name ? ` · Discord ${user.discord_name}` : ""}</p>
         <div class="stats">
           <div class="stat"><b>${latest?.wardog_level ?? "—"}</b><span>Уровень</span></div>
-          <div class="stat"><b>${latest?.xp ?? "—"}</b><span>Опыт</span></div>
+          <div class="stat"><b>${num(latest?.xp)}</b><span>Опыт</span></div>
           <div class="stat"><b>${money(latest?.cash ?? null)}</b><span>Деньги</span></div>
+          <div class="stat"><b>${latest?.gold ?? "—"}</b><span>Золото</span></div>
+          <div class="stat"><b>${latest?.unlocks ?? "—"}</b><span>Открытия</span></div>
           <div class="stat"><b>${money(latest?.account_value ?? null)}</b><span>Стоимость</span></div>
+          <div class="stat"><b>${latest?.role_assault ?? "—"}</b><span>Штурм</span></div>
+          <div class="stat"><b>${latest?.role_medic ?? "—"}</b><span>Медик</span></div>
+          <div class="stat"><b>${latest?.role_recon ?? "—"}</b><span>Разведка</span></div>
+          <div class="stat"><b>${latest?.role_support ?? "—"}</b><span>Поддержка</span></div>
+          <div class="stat"><b>${latest?.role_driver ?? "—"}</b><span>Водитель</span></div>
+          <div class="stat"><b>${latest?.role_pilot ?? "—"}</b><span>Пилот</span></div>
         </div>
         ${chart(profile.history)}
-        <p class="note">Снимков: ${profile.history.length}. Синхронизация: ${profile.sync?.status ?? "ещё не приходила"}.</p>
+        <p class="note">Снимков: ${profile.history.length}. Цифры игрока: <a href="https://wardogstracker.gg/profile/${id}">WARDOGS Tracker</a>.</p>
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
           <label><input id="cis" type="checkbox" ${user.cis_opt_in ? "checked" : ""}/> Участвовать в топе СНГ</label>

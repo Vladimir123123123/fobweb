@@ -119,6 +119,56 @@ async function saveCareer(steamId: string, stats: {
   return true;
 }
 
+function sameCareer(row: Record<string, unknown>, stats: NonNullable<Parameters<typeof saveCareer>[1]>) {
+  const num = (value: unknown) => value == null ? null : Number(value);
+  const level = whole(stats.wardogLevel, 1000);
+  const xp = whole(stats.careerXp, 50_000_000_000);
+  if (level == null || xp == null) return false;
+  return num(row.wardog_level) === level
+    && num(row.xp) === xp
+    && num(row.cash) === whole(stats.cash, 50_000_000_000)
+    && num(row.gold) === whole(stats.gold, 1_000_000)
+    && num(row.unlocks) === whole(stats.unlocks, 100_000)
+    && num(row.role_assault) === roleLevel(stats, "assault")
+    && num(row.role_medic) === roleLevel(stats, "medic")
+    && num(row.role_recon) === roleLevel(stats, "recon")
+    && num(row.role_support) === roleLevel(stats, "support")
+    && num(row.role_driver) === roleLevel(stats, "driver")
+    && num(row.role_pilot) === roleLevel(stats, "pilot");
+}
+
+async function pullPublicCareer(steamId: string) {
+  try {
+    const response = await fetch(`https://wardogstracker.gg/api/v1/players/${steamId}`, {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return false;
+    const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
+    const stats = body.player?.stats ?? null;
+    if (!stats) return false;
+    const latest = await sql<Record<string, unknown>[]>`
+      SELECT wardog_level, xp, cash, gold, unlocks,
+             role_assault, role_medic, role_recon, role_support, role_driver, role_pilot
+      FROM snapshots WHERE steam_id = ${steamId}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    if (latest[0] && sameCareer(latest[0], stats)) return true;
+    return saveCareer(steamId, stats, "tracker", false);
+  } catch {
+    return false;
+  }
+}
+
+async function refreshPublicCareers() {
+  const due = await sql<{ steam_id: string }[]>`
+    SELECT steam_id FROM users
+    WHERE last_login_at > DATE_SUB(NOW(), INTERVAL 14 DAY)
+    ORDER BY last_login_at DESC
+    LIMIT 30
+  `;
+  for (const row of due) await pullPublicCareer(row.steam_id);
+}
+
 async function refreshCareers() {
   if (!config.trackerKey) return;
   const due = await sql<{ steam_id: string }[]>`
@@ -213,7 +263,8 @@ app.get("/auth/wardogs", async (request, reply) => {
     return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
   }
   await upsertUser(traded.steamId);
-  const saved = await saveCareer(traded.steamId, traded.player?.stats ?? null, "login", true);
+  const saved = await saveCareer(traded.steamId, traded.player?.stats ?? null, "login", true)
+    || await pullPublicCareer(traded.steamId);
   const secure = config.secureCookie ? "; Secure" : "";
   const next = readCookie(request.headers.cookie, "wd_next");
   const target = next ? decodeURIComponent(next) : "/ratings";
@@ -232,6 +283,7 @@ app.get("/auth/steam/callback", async (request, reply) => {
   const steamId = await verifySteamLogin(request.query as Record<string, unknown>);
   if (!steamId) return reply.code(401).type("text/plain").send("Steam не подтвердил вход.");
   await upsertUser(steamId);
+  await pullPublicCareer(steamId);
   const cookie = [
     `wd_session=${createSession(steamId)}`,
     "Path=/",
@@ -393,7 +445,8 @@ app.get("/api/players/:steamId", async (request, reply) => {
   `;
   if (!users.length) return notFound(reply);
   const history = await sql`
-    SELECT created_at, wardog_level, xp, cash, gold, unlocks, account_value, source
+    SELECT created_at, wardog_level, xp, cash, gold, unlocks, account_value,
+           role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source
     FROM snapshots
     WHERE steam_id = ${steamId}
     ORDER BY created_at ASC
@@ -1021,6 +1074,7 @@ setInterval(() => {
 }, 60_000).unref();
 setInterval(() => {
   refreshCareers().catch((error) => app.log.error(error));
+  refreshPublicCareers().catch((error) => app.log.error(error));
 }, 15 * 60 * 1000).unref();
 
 await migrate();
@@ -1030,3 +1084,4 @@ setInterval(() => {
 }, 24 * 60 * 60 * 1000);
 await app.listen({ port: config.port, host: "0.0.0.0" });
 app.log.info(`API ${config.port}, сезон ${config.season}`);
+refreshPublicCareers().catch((error) => app.log.error(error));
