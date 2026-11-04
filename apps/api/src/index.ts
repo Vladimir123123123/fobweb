@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { config } from "./config.js";
+import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, createSession, readSession } from "./session.js";
@@ -871,5 +872,9 @@ setInterval(() => {
 }, 60_000).unref();
 
 await migrate();
+dumpDatabase().catch((error) => app.log.error(error));
+setInterval(() => {
+  dumpDatabase().catch((error) => app.log.error(error));
+}, 24 * 60 * 60 * 1000);
 await app.listen({ port: config.port, host: "0.0.0.0" });
 app.log.info(`API ${config.port}, сезон ${config.season}`);
