@@ -4,7 +4,7 @@ import Base from "../layouts/Base.astro";
 <Base title="Сквады — WARDOGS СНГ">
   <p class="eyebrow">Отряд со Steam</p>
   <h1>Сквады</h1>
-  <p class="lead">Карточка сквада: логотип, описание, критерии набора, Discord и состав. Один игрок состоит в одном скваде.</p>
+  <p class="lead">Карточка сквада: логотип, описание, критерии набора, Discord и состав. Вступить может любой, кто вошёл через Steam. Один игрок состоит в одном скваде.</p>
   <form class="squad-form" id="create">
     <input id="name" placeholder="Название" maxlength="32" />
     <input id="tag" placeholder="ТЕГ" maxlength="5" />
@@ -69,7 +69,8 @@ import Base from "../layouts/Base.astro";
       closed: boolean;
       pending: Array<{ kind: string }>;
     } | null;
-    if (owned) document.querySelector("#create")?.setAttribute("hidden", "");
+    const seated = (data.mine as Array<{ squad_id: number; status: string; role: string }>).find((row) => row.status === "member");
+    if (owned || seated) document.querySelector("#create")?.setAttribute("hidden", "");
     else document.querySelector("#create")?.removeAttribute("hidden");
     const stateName = (status: string) => status === "approved" ? "Одобрено" : status === "rejected" ? "Отклонён" : "На модерации";
     const stateClass = (status: string) => status === "approved" ? "approved" : status === "rejected" ? "rejected" : "pending";
@@ -90,7 +91,7 @@ import Base from "../layouts/Base.astro";
         </a>
         <div class="squad-actions">
           ${squad.discord_url ? `<a class="btn ghost small" href="${esc(squad.discord_url)}">Discord</a>` : ""}
-          ${leader ? `<button class="btn small" data-edit type="button">Редактировать</button>` : squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">${mine.get(squad.id)?.status === "pending" ? "Заявка отправлена" : "Подать заявку"}</button>`}
+          ${leader ? `<button class="btn small" data-edit type="button">Редактировать</button>` : mine.get(squad.id)?.status === "member" ? `<span class="note">Вы в составе</span>` : seated || squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">Вступить</button>`}
         </div>
         ${leader ? `
           <form id="profile-form" class="squad-form squad-edit" hidden>
@@ -156,8 +157,16 @@ import Base from "../layouts/Base.astro";
     list.querySelectorAll<HTMLButtonElement>("[data-join]").forEach((button) => {
       button.addEventListener("click", async () => {
         const response = await fetch(`/api/squads/${button.dataset.join}/join`, { method: "POST" });
-        note.textContent = response.ok ? "Заявка отправлена." : "Нужен вход через Steam, и вы ещё не состоите в другом скваде.";
+        const body = await response.json().catch(() => ({}));
         if (response.status === 401) location.href = "/auth/steam?next=/squads";
+        note.textContent = response.ok
+          ? "Вы в составе сквада."
+          : body.error === "closed"
+            ? "Набор закрыт."
+            : body.error === "already"
+              ? "Вы уже состоите в скваде."
+              : "Сейчас вступить не получилось.";
+        if (response.ok) load();
       });
     });
   }
@@ -174,7 +183,12 @@ import Base from "../layouts/Base.astro";
       }),
     });
     if (response.status === 401) location.href = "/auth/steam?next=/squads";
-    note.textContent = response.ok ? "Сквад отправлен на проверку." : "Название, тег из 2–5 букв, описание от 20 символов и критерии от 10.";
+    const created = await response.json().catch(() => ({}));
+    note.textContent = response.ok
+      ? "Сквад отправлен на проверку."
+      : created.error === "already"
+        ? "Вы уже состоите в скваде."
+        : "Название, тег из 2–5 букв, описание от 20 символов и критерии от 10.";
     if (response.ok) load();
   });
   load();

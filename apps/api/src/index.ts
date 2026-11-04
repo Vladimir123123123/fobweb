@@ -601,7 +601,7 @@ app.post("/api/squads", async (request, reply) => {
   const about = text(body?.about, 700);
   const criteria = text(body?.criteria, 700);
   if (name.length < 3 || !/^[A-Z0-9]{2,5}$/.test(tag) || about.length < 20 || criteria.length < 10) return reply.code(400).send({ error: "bad_request" });
-  const existing = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${steamId} AND status = 'member'`;
+  const existing = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${steamId}`;
   if (existing.length) return reply.code(400).send({ error: "already" });
   const created = await sql<{ id: number }[]>`
     INSERT INTO squads (name, tag, owner_steam_id, about, criteria) VALUES (${name}, ${tag}, ${steamId}, ${about}, ${criteria})
@@ -618,15 +618,31 @@ app.post("/api/squads/:id/join", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!steamId) return reply.code(401).send({ error: "steam" });
   const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id)) return reply.code(400).send({ error: "bad_request" });
   const squad = await sql`SELECT id, closed, status FROM squads WHERE id = ${id}`;
-  if (!squad.length || squad[0].closed || squad[0].status !== "approved") return notFound(reply);
-  const member = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${steamId} AND status = 'member'`;
-  if (member.length) return reply.code(400).send({ error: "already" });
-  await sql`
-    INSERT INTO squad_members (squad_id, steam_id, role, status)
-    VALUES (${id}, ${steamId}, 'member', 'pending')
-    ON DUPLICATE KEY UPDATE status = 'pending'
-  `;
+  if (!squad.length || squad[0].status !== "approved") return notFound(reply);
+  if (squad[0].closed) return reply.code(400).send({ error: "closed" });
+  try {
+    await sql.begin(async (tx) => {
+      const seat = await tx<{ squad_id: number; status: string }[]>`
+        SELECT squad_id, status FROM squad_members WHERE steam_id = ${steamId} FOR UPDATE
+      `;
+      const taken = seat.find((row) => row.status === "member");
+      if (taken && Number(taken.squad_id) !== id) throw new Error("already");
+      if (taken) return;
+      await tx`DELETE FROM squad_members WHERE steam_id = ${steamId}`;
+      await tx`
+        INSERT INTO squad_members (squad_id, steam_id, role, status)
+        VALUES (${id}, ${steamId}, 'member', 'member')
+      `;
+    });
+  } catch (error) {
+    const errno = typeof error === "object" && error && "errno" in error ? Number(error.errno) : 0;
+    if (errno === 1062 || (error instanceof Error && error.message === "already")) {
+      return reply.code(400).send({ error: "already" });
+    }
+    throw error;
+  }
   return { ok: true };
 });
 
@@ -695,6 +711,11 @@ app.get("/api/squads/:id", async (request, reply) => {
     WHERE m.squad_id = ${id} AND (m.status = 'member' OR ${viewer} = ${squad.owner_steam_id})
     ORDER BY m.role = 'leader' DESC, u.persona
   `;
+  const seatRows = viewer
+    ? await sql<{ squad_id: number; status: string }[]>`
+      SELECT squad_id, status FROM squad_members WHERE steam_id = ${viewer} AND status = 'member' LIMIT 1
+    `
+    : [];
   return {
     squad: {
       ...squad,
@@ -703,6 +724,7 @@ app.get("/api/squads/:id", async (request, reply) => {
     },
     members,
     mine: viewer === squad.owner_steam_id,
+    seat: seatRows[0] ?? null,
   };
 });
 

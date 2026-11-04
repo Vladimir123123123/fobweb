@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS squad_members (
   CONSTRAINT members_user FOREIGN KEY (steam_id) REFERENCES users (steam_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE UNIQUE INDEX IF NOT EXISTS squad_members_one ON squad_members (steam_id);
+
 CREATE TABLE IF NOT EXISTS admins (
   steam_id varchar(20) PRIMARY KEY,
   created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)

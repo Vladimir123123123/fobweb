@@ -18,6 +18,8 @@ import Base from "../layouts/Base.astro";
       const data = await response.json();
       const squad = data.squad;
       const members = data.members as Array<{ steam_id: string; role: string; status: string; persona: string | null; avatar: string | null }>;
+      const here = data.seat && String(data.seat.squad_id) === id;
+      const elsewhere = Boolean(data.seat) && !here;
       const roster = members.map((member) => `
         <a href="/p?id=${member.steam_id}">
           ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="squad-mark" style="width:36px;height:36px;font-size:12px">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
@@ -38,7 +40,7 @@ import Base from "../layouts/Base.astro";
             <p class="squad-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
             <div class="squad-actions">
               ${squad.discord_url ? `<a class="btn small" href="${esc(squad.discord_url)}">Discord сквада</a>` : ""}
-              ${squad.closed ? "" : `<button class="btn small" id="join" type="button">Подать заявку</button>`}
+              ${here ? `<span class="note">Вы в составе.</span>` : elsewhere ? `<span class="note">Вы уже состоите в скваде.</span>` : squad.closed ? `<span class="note">Набор закрыт.</span>` : `<button class="btn small" id="join" type="button">Вступить</button>`}
             </div>
           </div>
         </div>
@@ -49,8 +51,16 @@ import Base from "../layouts/Base.astro";
       document.querySelector("#join")?.addEventListener("click", async () => {
         const note = document.querySelector("#squad-note")!;
         const join = await fetch(`/api/squads/${id}/join`, { method: "POST" });
-        note.textContent = join.ok ? "Заявка отправлена." : "Нужен вход через Steam, и вы ещё не состоите в другом скваде.";
+        const body = await join.json().catch(() => ({}));
         if (join.status === 401) location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+        note.textContent = join.ok
+          ? "Вы в составе сквада."
+          : body.error === "closed"
+            ? "Набор закрыт."
+            : body.error === "already"
+              ? "Вы уже состоите в скваде."
+              : "Сейчас вступить не получилось.";
+        if (join.ok) location.reload();
       });
     }
   }
