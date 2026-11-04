@@ -9,7 +9,10 @@ function required(name: string, fallback?: string) {
   return value;
 }
 
-const siteOrigin = (process.env.SITE_ORIGIN ?? "http://localhost:4321").replace(/\/$/, "");
+const requestedOrigin = (process.env.SITE_ORIGIN ?? "").replace(/\/$/, "");
+const siteOrigin = !requestedOrigin || /localhost|127\.0\.0\.1/.test(requestedOrigin)
+  ? "https://wd-axis.ru"
+  : requestedOrigin;
 
 export const config = {
   siteOrigin,
