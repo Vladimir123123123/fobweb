@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS squads (
   closed tinyint(1) NOT NULL DEFAULT 0,
   status varchar(20) NOT NULL DEFAULT 'pending',
   discord_url varchar(200) NOT NULL DEFAULT '',
+  about varchar(700) NOT NULL DEFAULT '',
+  criteria varchar(700) NOT NULL DEFAULT '',
   logo_path varchar(80),
   banner_path varchar(80),
   created_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
@@ -143,3 +145,6 @@ CREATE TABLE IF NOT EXISTS build_notes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX IF NOT EXISTS build_notes_build ON build_notes (build_id, created_at);
+
+ALTER TABLE squads ADD COLUMN IF NOT EXISTS about varchar(700) NOT NULL DEFAULT '';
+ALTER TABLE squads ADD COLUMN IF NOT EXISTS criteria varchar(700) NOT NULL DEFAULT '';

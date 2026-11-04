@@ -404,7 +404,7 @@ app.get("/api/media/:file", async (request, reply) => {
 app.get("/api/squads", async (request) => {
   const steamId = steamIdOf(request);
   const rows = await sql`
-    SELECT sq.id, sq.name, sq.tag, sq.closed, sq.logo_path, u.persona AS owner_name,
+    SELECT sq.id, sq.name, sq.tag, sq.closed, sq.about, sq.criteria, sq.discord_url, sq.logo_path, u.persona AS owner_name,
            (SELECT CAST(COUNT(*) AS SIGNED) FROM squad_members m WHERE m.squad_id = sq.id AND m.status = 'member') AS members
     FROM squads sq
     JOIN users u ON u.steam_id = sq.owner_steam_id
@@ -416,8 +416,8 @@ app.get("/api/squads", async (request) => {
     ? await sql`SELECT squad_id, status, role FROM squad_members WHERE steam_id = ${steamId}`
     : [];
   const deskRows = steamId
-    ? await sql<{ id: number; name: string; tag: string; status: string; discord_url: string; logo_path: string | null; banner_path: string | null }[]>`
-      SELECT id, name, tag, status, discord_url, logo_path, banner_path
+    ? await sql<{ id: number; name: string; tag: string; status: string; about: string; criteria: string; discord_url: string; logo_path: string | null; banner_path: string | null }[]>`
+      SELECT id, name, tag, status, about, criteria, discord_url, logo_path, banner_path
       FROM squads
       WHERE owner_steam_id = ${steamId}
       LIMIT 1
@@ -442,11 +442,13 @@ app.post("/api/squads", async (request, reply) => {
   const body = asObject(request.body);
   const name = text(body?.name, 32);
   const tag = text(body?.tag, 6).toUpperCase();
-  if (name.length < 3 || !/^[A-Z0-9]{2,5}$/.test(tag)) return reply.code(400).send({ error: "bad_request" });
+  const about = text(body?.about, 700);
+  const criteria = text(body?.criteria, 700);
+  if (name.length < 3 || !/^[A-Z0-9]{2,5}$/.test(tag) || about.length < 20 || criteria.length < 10) return reply.code(400).send({ error: "bad_request" });
   const existing = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${steamId} AND status = 'member'`;
   if (existing.length) return reply.code(400).send({ error: "already" });
   const created = await sql<{ id: number }[]>`
-    INSERT INTO squads (name, tag, owner_steam_id) VALUES (${name}, ${tag}, ${steamId})
+    INSERT INTO squads (name, tag, owner_steam_id, about, criteria) VALUES (${name}, ${tag}, ${steamId}, ${about}, ${criteria})
   `;
   await sql`
     INSERT INTO squad_members (squad_id, steam_id, role, status)
@@ -490,19 +492,53 @@ app.post("/api/squads/:id/decide", async (request, reply) => {
   return { ok: true };
 });
 
+app.post("/api/squads/:id/profile", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  if (!steamId || !Number.isInteger(id)) return reply.code(401).send({ error: "steam" });
+  const body = asObject(request.body);
+  if (!body) return reply.code(400).send({ error: "bad_request" });
+  const about = text(body.about, 700);
+  const criteria = text(body.criteria, 700);
+  const discordRaw = text(body.discord, 200);
+  const discord = discordRaw ? discordInvite(discordRaw) : "";
+  if (about.length < 20 || criteria.length < 10 || (discordRaw && !discord)) return reply.code(400).send({ error: "bad_request" });
+  const owned = await sql`SELECT id FROM squads WHERE id = ${id} AND owner_steam_id = ${steamId}`;
+  if (!owned.length) return notFound(reply);
+  await sql`UPDATE squads SET about = ${about}, criteria = ${criteria}, discord_url = ${discord} WHERE id = ${id}`;
+  return { ok: true };
+});
+
 app.get("/api/squads/:id", async (request, reply) => {
   const id = Number((request.params as { id: string }).id);
-  const squad = await sql`SELECT id, name, tag, closed, owner_steam_id FROM squads WHERE id = ${id}`;
-  if (!squad.length) return notFound(reply);
+  if (!Number.isInteger(id)) return notFound(reply);
   const viewer = steamIdOf(request);
+  const rows = await sql`
+    SELECT sq.id, sq.name, sq.tag, sq.closed, sq.status, sq.about, sq.criteria, sq.discord_url,
+           sq.logo_path, sq.banner_path, sq.owner_steam_id, u.persona AS owner_name,
+           (SELECT CAST(COUNT(*) AS SIGNED) FROM squad_members m WHERE m.squad_id = sq.id AND m.status = 'member') AS members
+    FROM squads sq
+    JOIN users u ON u.steam_id = sq.owner_steam_id
+    WHERE sq.id = ${id}
+  `;
+  const squad = rows[0];
+  if (!squad || (squad.status !== "approved" && squad.owner_steam_id !== viewer)) return notFound(reply);
   const members = await sql`
     SELECT m.steam_id, m.role, m.status, u.persona, u.avatar
     FROM squad_members m
     JOIN users u ON u.steam_id = m.steam_id
-    WHERE m.squad_id = ${id} AND (m.status = 'member' OR ${viewer} = ${squad[0].owner_steam_id})
-    ORDER BY m.role DESC, u.persona
+    WHERE m.squad_id = ${id} AND (m.status = 'member' OR ${viewer} = ${squad.owner_steam_id})
+    ORDER BY m.role = 'leader' DESC, u.persona
   `;
-  return { squad: squad[0], members };
+  return {
+    squad: {
+      ...squad,
+      logo: squad.logo_path ? `/api/media/${squad.logo_path}` : "",
+      banner: squad.banner_path ? `/api/media/${squad.banner_path}` : "",
+    },
+    members,
+    mine: viewer === squad.owner_steam_id,
+  };
 });
 
 app.post("/api/squads/:id/assets", async (request, reply) => {

@@ -1,0 +1,56 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Сквад — WARDOGS СНГ">
+  <div id="squad-page"><p>Загрузка сквада.</p></div>
+</Base>
+<script>
+  const root = document.querySelector("#squad-page")!;
+  const id = new URLSearchParams(location.search).get("id") ?? "";
+  const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  if (!/^\d+$/.test(id)) {
+    root.innerHTML = "<h1>Такой страницы нет</h1>";
+  } else {
+    const response = await fetch(`/api/squads/${id}`);
+    if (!response.ok) {
+      root.innerHTML = "<h1>Сквада нет</h1><p>Его не опубликовали или он ещё на проверке.</p>";
+    } else {
+      const data = await response.json();
+      const squad = data.squad;
+      const members = data.members as Array<{ steam_id: string; role: string; status: string; persona: string | null; avatar: string | null }>;
+      const roster = members.map((member) => `
+        <a href="/p?id=${member.steam_id}">
+          ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="squad-mark" style="width:36px;height:36px;font-size:12px">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
+          <span>${esc(member.persona ?? member.steam_id)} · ${member.role === "leader" ? "лидер" : member.status === "pending" ? "заявка" : "в составе"}</span>
+        </a>`).join("");
+      root.innerHTML = `
+        <p class="eyebrow"><a href="/squads">Сквады</a></p>
+        ${squad.banner ? `<img class="squad-banner" src="${esc(squad.banner)}" alt="" />` : ""}
+        <div class="squad-card open panel">
+          <div class="squad-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</div>
+          <div>
+            <h2>[${esc(squad.tag)}] ${esc(squad.name)}</h2>
+            <p>${squad.members} в составе · <a href="/p?id=${squad.owner_steam_id}">${esc(squad.owner_name ?? "владелец")}</a>${squad.closed ? " · набор закрыт" : ""}</p>
+            <span class="squad-label">Описание</span>
+            <p class="squad-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>
+            <span class="squad-label">Критерии набора</span>
+            <p class="squad-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
+            <div class="squad-actions">
+              ${squad.discord_url ? `<a class="btn small" href="${esc(squad.discord_url)}">Discord сквада</a>` : ""}
+              ${squad.closed ? "" : `<button class="btn small" id="join" type="button">Подать заявку</button>`}
+            </div>
+          </div>
+        </div>
+        <h2>Состав</h2>
+        <div class="squad-roster">${roster || "<p>В составе пока никого.</p>"}</div>
+        <p class="note" id="squad-note"></p>
+      `;
+      document.querySelector("#join")?.addEventListener("click", async () => {
+        const note = document.querySelector("#squad-note")!;
+        const join = await fetch(`/api/squads/${id}/join`, { method: "POST" });
+        note.textContent = join.ok ? "Заявка отправлена." : "Нужен вход через Steam, и вы ещё не состоите в другом скваде.";
+        if (join.status === 401) location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+      });
+    }
+  }
+</script>

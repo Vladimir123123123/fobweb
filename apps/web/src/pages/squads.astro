@@ -4,11 +4,13 @@ import Base from "../layouts/Base.astro";
 <Base title="Сквады — WARDOGS СНГ">
   <p class="eyebrow">Отряд со Steam</p>
   <h1>Сквады</h1>
-  <p class="lead">Один игрок — один сквад. В общий список и на полосу главной сквад попадает после проверки. Новая картинка баннера или логотипа тоже ждёт проверки: пока её не примут, на сайте остаётся прежняя.</p>
+  <p class="lead">Карточка сквада: логотип, описание, критерии набора, Discord и состав. Один игрок состоит в одном скваде.</p>
   <div id="desk"></div>
-  <form class="inline" id="create">
+  <form class="squad-form" id="create">
     <input id="name" placeholder="Название" maxlength="32" />
     <input id="tag" placeholder="ТЕГ" maxlength="5" />
+    <textarea id="about" placeholder="Описание: чем занимается сквад" maxlength="700"></textarea>
+    <textarea id="criteria" placeholder="Критерии набора: часы, роли, возраст, язык" maxlength="700"></textarea>
     <button class="btn" type="submit">Создать</button>
   </form>
   <p class="note" id="squad-note"></p>
@@ -63,6 +65,8 @@ import Base from "../layouts/Base.astro";
       name: string;
       tag: string;
       status: string;
+      about: string;
+      criteria: string;
       discord_url: string;
       banner_path: string | null;
       pending: Array<{ kind: string }>;
@@ -75,6 +79,12 @@ import Base from "../layouts/Base.astro";
         <article class="panel">
           <strong>[${esc(owned.tag)}] ${esc(owned.name)}</strong>
           <p>${state} ${owned.banner_path ? "Баннер уже на главной." : "Баннера на главной ещё нет."} ${waitingLogo ? "Новый логотип ждёт проверки." : ""} ${waitingBanner ? "Новый баннер ждёт проверки, на главной остаётся прежний." : ""}</p>
+          <form id="profile-form" class="squad-form">
+            <label>Описание<textarea id="profile-about" maxlength="700">${esc(owned.about ?? "")}</textarea></label>
+            <label>Критерии набора<textarea id="profile-criteria" maxlength="700">${esc(owned.criteria ?? "")}</textarea></label>
+            <label>Discord<input id="profile-discord" placeholder="https://discord.gg/..." value="${esc(owned.discord_url)}" /></label>
+            <button class="btn small" type="submit">Сохранить карточку</button>
+          </form>
           <form id="logo-form" class="inline">
             <input id="logo-file" type="file" accept="image/jpeg,image/png,image/webp" />
             <button class="btn small" type="submit">Отправить логотип</button>
@@ -87,6 +97,20 @@ import Base from "../layouts/Base.astro";
         </article>
       `;
       document.querySelector("#create")?.setAttribute("hidden", "");
+      desk.querySelector("#profile-form")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const response = await fetch(`/api/squads/${owned.id}/profile`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            about: (document.querySelector("#profile-about") as HTMLTextAreaElement).value,
+            criteria: (document.querySelector("#profile-criteria") as HTMLTextAreaElement).value,
+            discord: (document.querySelector("#profile-discord") as HTMLInputElement).value,
+          }),
+        });
+        note.textContent = response.ok ? "Карточка сохранена." : "Описание от 20 символов, критерии от 10, Discord — ссылка discord.gg.";
+        if (response.ok) load();
+      });
       desk.querySelector("#logo-form")?.addEventListener("submit", async (event) => {
         event.preventDefault();
         const file = (document.querySelector("#logo-file") as HTMLInputElement).files?.[0];
@@ -114,13 +138,21 @@ import Base from "../layouts/Base.astro";
       desk.innerHTML = "";
       document.querySelector("#create")?.removeAttribute("hidden");
     }
-    list.innerHTML = data.squads.map((squad: { id: number; name: string; tag: string; closed: boolean; members: number; owner_name: string | null; logo: string }) => `
+    list.innerHTML = data.squads.map((squad: { id: number; name: string; tag: string; closed: boolean; members: number; owner_name: string | null; logo: string; about: string; criteria: string; discord_url: string }) => `
       <article class="panel squad-card">
-        ${squad.logo ? `<img class="squad-logo" src="${esc(squad.logo)}" alt="" />` : ""}
+        <a class="squad-mark" href="/squad?id=${squad.id}">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</a>
         <div>
-          <strong>[${esc(squad.tag)}] ${esc(squad.name)}</strong>
-          <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")} ${squad.closed ? "· набор закрыт" : ""}</p>
-          ${squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">${mine.get(squad.id) === "pending" ? "Заявка отправлена" : "Подать заявку"}</button>`}
+          <h2><a href="/squad?id=${squad.id}">[${esc(squad.tag)}] ${esc(squad.name)}</a></h2>
+          <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")}${squad.closed ? " · набор закрыт" : ""}</p>
+          <span class="squad-label">Описание</span>
+          <p class="squad-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>
+          <span class="squad-label">Критерии набора</span>
+          <p class="squad-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
+          <div class="squad-actions">
+            ${squad.discord_url ? `<a class="btn ghost small" href="${esc(squad.discord_url)}">Discord</a>` : ""}
+            <a class="btn ghost small" href="/squad?id=${squad.id}">Состав</a>
+            ${squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">${mine.get(squad.id) === "pending" ? "Заявка отправлена" : "Подать заявку"}</button>`}
+          </div>
         </div>
       </article>
     `).join("") || "<p>Сквадов пока нет.</p>";
@@ -140,10 +172,12 @@ import Base from "../layouts/Base.astro";
       body: JSON.stringify({
         name: (document.querySelector("#name") as HTMLInputElement).value,
         tag: (document.querySelector("#tag") as HTMLInputElement).value,
+        about: (document.querySelector("#create #about") as HTMLTextAreaElement).value,
+        criteria: (document.querySelector("#create #criteria") as HTMLTextAreaElement).value,
       }),
     });
     if (response.status === 401) location.href = "/auth/steam?next=/squads";
-    note.textContent = response.ok ? "Сквад отправлен на проверку." : "Проверьте название и тег из 2–5 латинских букв или цифр.";
+    note.textContent = response.ok ? "Сквад отправлен на проверку." : "Название, тег из 2–5 букв, описание от 20 символов и критерии от 10.";
     if (response.ok) load();
   });
   load();
