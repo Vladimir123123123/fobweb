@@ -277,7 +277,7 @@ label.check input { width: auto; }
 .squad-card.open .squad-copy { display: block; -webkit-line-clamp: unset; overflow: visible; }
 .squad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .squad-form { display: grid; gap: 10px; margin: 12px 0; }
-.squad-banner { width: 100%; aspect-ratio: 800 / 450; object-fit: cover; background: #0c0e13; border: 1px solid var(--line); display: block; }
+.squad-banner { width: 100%; height: auto; object-fit: contain; object-position: center; background: #0c0e13; border: 1px solid var(--line); display: block; }
 .squad-roster { display: grid; gap: 8px; margin-top: 8px; }
 .squad-roster a { display: flex; gap: 10px; align-items: center; color: inherit; text-decoration: none; }
 .squad-roster img { width: 36px; height: 36px; object-fit: cover; background: #0c0e13; }
