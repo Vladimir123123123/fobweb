@@ -22,11 +22,14 @@ const KEEP = 7;
 
 function literal(value: unknown) {
   if (value === null || value === undefined) return "NULL";
-  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (typeof value === "boolean") return value ? "1" : "0";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
   if (typeof value === "bigint") return value.toString();
-  if (value instanceof Date) return `'${value.toISOString()}'`;
-  return `'${String(value).replaceAll("'", "''")}'`;
+  if (value instanceof Date) {
+    const pad = (part: number, size = 2) => String(part).padStart(size, "0");
+    return `'${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())} ${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}.${pad(value.getUTCMilliseconds(), 3)}'`;
+  }
+  return `'${String(value).replaceAll("\\", "\\\\").replaceAll("'", "''")}'`;
 }
 
 export async function dumpDatabase() {
@@ -35,21 +38,20 @@ export async function dumpDatabase() {
   const lines = ["BEGIN;"];
   for (const table of TABLES) {
     if (!/^[a-z_]+$/.test(table)) continue;
-    const columns = await sql<{ column_name: string; is_identity: string }[]>`
-      SELECT column_name, is_identity
+    const columns = await sql<{ column_name: string; extra: string }[]>`
+      SELECT column_name, extra
       FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = ${table}
+      WHERE table_schema = DATABASE() AND table_name = ${table}
       ORDER BY ordinal_position
     `;
     if (!columns.length) continue;
     const names = columns.map((column) => column.column_name);
-    const rows = await sql.unsafe(`SELECT ${names.map((name) => `"${name}"`).join(", ")} FROM ${table}`);
+    const listed = names.map((name) => `\`${name}\``).join(", ");
+    const rows = await sql.unsafe(`SELECT ${listed} FROM \`${table}\``);
     if (!rows.length) continue;
-    const identity = columns.some((column) => column.is_identity === "YES");
-    const listed = names.map((name) => `"${name}"`).join(", ");
     for (const row of rows) {
       const values = names.map((name) => literal(row[name])).join(", ");
-      lines.push(`INSERT INTO ${table} (${listed})${identity ? " OVERRIDING SYSTEM VALUE" : ""} VALUES (${values});`);
+      lines.push(`INSERT INTO \`${table}\` (${listed}) VALUES (${values});`);
     }
   }
   lines.push("COMMIT;");

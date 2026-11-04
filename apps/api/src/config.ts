@@ -21,7 +21,7 @@ export const config = {
   syncKey: (process.env.SYNC_INGEST_KEY ?? "").trim(),
   discordId: (process.env.DISCORD_CLIENT_ID ?? "").trim(),
   discordSecret: (process.env.DISCORD_CLIENT_SECRET ?? "").trim(),
-  databaseUrl: required("DATABASE_URL", "postgres://wardogs:wardogs@localhost:5432/wardogs"),
+  databaseUrl: required("DATABASE_URL"),
   port: Number(process.env.API_PORT ?? 3000),
   secureCookie: siteOrigin.startsWith("https://"),
 };

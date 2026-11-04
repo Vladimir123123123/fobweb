@@ -82,11 +82,11 @@ async function upsertUser(steamId: string) {
   await sql`
     INSERT INTO users (steam_id, persona, avatar, country, cis_opt_in, last_login_at)
     VALUES (${steamId}, ${profile.persona}, ${profile.avatar}, ${profile.country}, ${opted}, now())
-    ON CONFLICT (steam_id) DO UPDATE
-      SET persona = EXCLUDED.persona,
-          avatar = EXCLUDED.avatar,
-          country = EXCLUDED.country,
-          last_login_at = now()
+    ON DUPLICATE KEY UPDATE
+      persona = VALUES(persona),
+      avatar = VALUES(avatar),
+      country = VALUES(country),
+      last_login_at = NOW()
   `;
   await sql`
     INSERT INTO events (name, steam_id) VALUES ('login_ok', ${steamId})
@@ -259,19 +259,22 @@ app.get("/api/ratings", async (request) => {
   const column = SORTS[sort];
   const season = text(query.season, 20) || config.season;
   const q = text(query.q, 40).replace(/[%_]/g, "");
+  if (!/^[a-z_]+$/.test(column)) return { season, sort, players: [] };
   const rows = await sql.unsafe(
-    `SELECT * FROM (
-       SELECT DISTINCT ON (s.steam_id)
-         s.steam_id, s.season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
-         s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
-         s.created_at, u.persona, u.avatar, u.country
-       FROM snapshots s
-       JOIN users u ON u.steam_id = s.steam_id
-       WHERE NOT u.hide_leaderboard AND u.cis_opt_in AND s.season = $1
-         AND ($2 = '' OR u.persona ILIKE $3)
-       ORDER BY s.steam_id, s.created_at DESC
-     ) latest
-     ORDER BY ${column} DESC NULLS LAST, xp DESC NULLS LAST
+    `SELECT s.steam_id, s.season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
+            s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
+            s.created_at, u.persona, u.avatar, u.country
+     FROM snapshots s
+     JOIN users u ON u.steam_id = s.steam_id
+     JOIN (
+       SELECT steam_id, MAX(created_at) AS created_at
+       FROM snapshots
+       WHERE season = ?
+       GROUP BY steam_id
+     ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
+     WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
+       AND (? = '' OR u.persona LIKE ?)
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC
      LIMIT 100`,
     [season, q, `%${q}%`],
   );
@@ -348,8 +351,8 @@ app.post("/api/internal/sync", async (request, reply) => {
   await sql`
     INSERT INTO sync_sessions (steam_id, status, expires_at, updated_at)
     VALUES (${steamId}, ${status}, ${expiry}, now())
-    ON CONFLICT (steam_id) DO UPDATE
-      SET status = EXCLUDED.status, expires_at = EXCLUDED.expires_at, updated_at = now()
+    ON DUPLICATE KEY UPDATE
+      status = VALUES(status), expires_at = VALUES(expires_at), updated_at = NOW()
   `;
   return { ok: true };
 });
@@ -402,7 +405,7 @@ app.get("/api/squads", async (request) => {
   const steamId = steamIdOf(request);
   const rows = await sql`
     SELECT sq.id, sq.name, sq.tag, sq.closed, sq.logo_path, u.persona AS owner_name,
-           (SELECT count(*)::int FROM squad_members m WHERE m.squad_id = sq.id AND m.status = 'member') AS members
+           (SELECT CAST(COUNT(*) AS SIGNED) FROM squad_members m WHERE m.squad_id = sq.id AND m.status = 'member') AS members
     FROM squads sq
     JOIN users u ON u.steam_id = sq.owner_steam_id
     WHERE sq.status = 'approved'
@@ -443,7 +446,7 @@ app.post("/api/squads", async (request, reply) => {
   const existing = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${steamId} AND status = 'member'`;
   if (existing.length) return reply.code(400).send({ error: "already" });
   const created = await sql<{ id: number }[]>`
-    INSERT INTO squads (name, tag, owner_steam_id) VALUES (${name}, ${tag}, ${steamId}) RETURNING id
+    INSERT INTO squads (name, tag, owner_steam_id) VALUES (${name}, ${tag}, ${steamId})
   `;
   await sql`
     INSERT INTO squad_members (squad_id, steam_id, role, status)
@@ -464,7 +467,7 @@ app.post("/api/squads/:id/join", async (request, reply) => {
   await sql`
     INSERT INTO squad_members (squad_id, steam_id, role, status)
     VALUES (${id}, ${steamId}, 'member', 'pending')
-    ON CONFLICT (squad_id, steam_id) DO UPDATE SET status = 'pending'
+    ON DUPLICATE KEY UPDATE status = 'pending'
   `;
   return { ok: true };
 });
@@ -543,10 +546,10 @@ app.get("/api/builds", async (request) => {
   const rows = season
     ? await sql`
       SELECT b.id, b.title, b.summary, b.code, b.season, b.created_at, u.persona, u.steam_id,
-        (SELECT count(*)::int FROM build_votes v WHERE v.build_id = b.id AND v.useful) AS useful,
-        (SELECT count(*)::int FROM build_votes v WHERE v.build_id = b.id AND NOT v.useful) AS useless,
-        (SELECT count(*)::int FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'comment') AS comments,
-        (SELECT count(*)::int FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'review') AS reviews
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_votes v WHERE v.build_id = b.id AND v.useful) AS useful,
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_votes v WHERE v.build_id = b.id AND NOT v.useful) AS useless,
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'comment') AS comments,
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'review') AS reviews
       FROM builds b
       JOIN users u ON u.steam_id = b.steam_id
       WHERE NOT b.hidden AND b.season = ${season}
@@ -555,10 +558,10 @@ app.get("/api/builds", async (request) => {
     `
     : await sql`
       SELECT b.id, b.title, b.summary, b.code, b.season, b.created_at, u.persona, u.steam_id,
-        (SELECT count(*)::int FROM build_votes v WHERE v.build_id = b.id AND v.useful) AS useful,
-        (SELECT count(*)::int FROM build_votes v WHERE v.build_id = b.id AND NOT v.useful) AS useless,
-        (SELECT count(*)::int FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'comment') AS comments,
-        (SELECT count(*)::int FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'review') AS reviews
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_votes v WHERE v.build_id = b.id AND v.useful) AS useful,
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_votes v WHERE v.build_id = b.id AND NOT v.useful) AS useless,
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'comment') AS comments,
+        (SELECT CAST(COUNT(*) AS SIGNED) FROM build_notes n WHERE n.build_id = b.id AND n.kind = 'review') AS reviews
       FROM builds b
       JOIN users u ON u.steam_id = b.steam_id
       WHERE NOT b.hidden
@@ -575,8 +578,8 @@ app.get("/api/builds/:id", async (request, reply) => {
   if (!Number.isInteger(id) || id < 1) return notFound(reply);
   const [build] = await sql`
     SELECT b.id, b.title, b.summary, b.season, b.code, b.created_at, b.steam_id, u.persona, u.avatar,
-      (SELECT count(*)::int FROM build_votes v WHERE v.build_id = b.id AND v.useful) AS useful,
-      (SELECT count(*)::int FROM build_votes v WHERE v.build_id = b.id AND NOT v.useful) AS useless
+      (SELECT CAST(COUNT(*) AS SIGNED) FROM build_votes v WHERE v.build_id = b.id AND v.useful) AS useful,
+      (SELECT CAST(COUNT(*) AS SIGNED) FROM build_votes v WHERE v.build_id = b.id AND NOT v.useful) AS useless
     FROM builds b
     JOIN users u ON u.steam_id = b.steam_id
     WHERE b.id = ${id} AND NOT b.hidden
@@ -615,7 +618,6 @@ app.post("/api/builds", async (request, reply) => {
   const [row] = await sql<{ id: string }[]>`
     INSERT INTO builds (steam_id, season, title, summary, code)
     VALUES (${steamId}, ${config.season}, ${title}, ${summary}, ${code})
-    RETURNING id
   `;
   await sql`INSERT INTO events (name, steam_id, path) VALUES ('build_publish', ${steamId}, ${`/b?id=${row?.id ?? ""}`})`;
   return { id: row?.id, season: config.season };
@@ -625,7 +627,7 @@ app.delete("/api/builds/:id", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!steamId) return reply.code(401).send({ error: "login" });
   const id = Number((request.params as { id: string }).id);
-  const rows = await sql`DELETE FROM builds WHERE id = ${id} AND steam_id = ${steamId} RETURNING id`;
+  const rows = await sql`DELETE FROM builds WHERE id = ${id} AND steam_id = ${steamId}`;
   if (!rows.length) return notFound(reply);
   return { ok: true };
 });
@@ -642,7 +644,7 @@ app.post("/api/builds/:id/vote", async (request, reply) => {
   await sql`
     INSERT INTO build_votes (build_id, steam_id, useful)
     VALUES (${id}, ${steamId}, ${useful})
-    ON CONFLICT (build_id, steam_id) DO UPDATE SET useful = EXCLUDED.useful, created_at = now()
+    ON DUPLICATE KEY UPDATE useful = VALUES(useful), created_at = NOW()
   `;
   return { ok: true };
 });
@@ -685,11 +687,10 @@ app.post("/api/admin/invites/redeem", async (request, reply) => {
   const rows = await sql`
     UPDATE admin_invites
     SET used_by = ${steamId}, used_at = now()
-    WHERE token = ${token} AND used_at IS NULL AND expires_at > now()
-    RETURNING token
+    WHERE token = ${token} AND used_at IS NULL AND expires_at > NOW()
   `;
   if (!rows.length) return notFound(reply);
-  await sql`INSERT INTO admins (steam_id) VALUES (${steamId}) ON CONFLICT DO NOTHING`;
+  await sql`INSERT IGNORE INTO admins (steam_id) VALUES (${steamId})`;
   return { ok: true };
 });
 
@@ -697,36 +698,36 @@ app.get("/api/admin/overview", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!(await isAdmin(steamId))) return notFound(reply);
   const [live] = await sql<{ count: number }[]>`
-    SELECT count(DISTINCT s.steam_id)::int AS count
+    SELECT CAST(COUNT(DISTINCT s.steam_id) AS SIGNED) AS count
     FROM snapshots s
     JOIN users u ON u.steam_id = s.steam_id
-    WHERE s.created_at > now() - interval '7 days' AND NOT u.hide_leaderboard AND u.cis_opt_in
+    WHERE s.created_at > NOW() - INTERVAL 7 DAY AND u.hide_leaderboard = 0 AND u.cis_opt_in = 1
   `;
   const counts = await sql<{ name: string; count: number }[]>`
-    SELECT name, count(*)::int AS count
+    SELECT name, CAST(COUNT(*) AS SIGNED) AS count
     FROM events
-    WHERE created_at > now() - interval '7 days'
+    WHERE created_at > NOW() - INTERVAL 7 DAY
     GROUP BY name
   `;
   const days = await sql`
-    SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, count(*)::int AS count
+    SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS day, CAST(COUNT(*) AS SIGNED) AS count
     FROM events
-    WHERE name = 'page_view' AND created_at > now() - interval '14 days'
-    GROUP BY 1
-    ORDER BY 1
+    WHERE name = 'page_view' AND created_at > NOW() - INTERVAL 14 DAY
+    GROUP BY day
+    ORDER BY day
   `;
   const sources = await sql`
-    SELECT COALESCE(utm_source, 'прямой') AS source, count(*)::int AS count
+    SELECT COALESCE(utm_source, 'прямой') AS source, CAST(COUNT(*) AS SIGNED) AS count
     FROM events
-    WHERE name = 'page_view' AND created_at > now() - interval '7 days'
-    GROUP BY 1
+    WHERE name = 'page_view' AND created_at > NOW() - INTERVAL 7 DAY
+    GROUP BY source
     ORDER BY count DESC
     LIMIT 12
   `;
   const players = await sql`
     SELECT steam_id, persona, country, cis_opt_in, hide_leaderboard, last_login_at
     FROM users
-    ORDER BY last_login_at DESC NULLS LAST
+    ORDER BY last_login_at IS NULL, last_login_at DESC
     LIMIT 30
   `;
   const squads = await sql`
@@ -755,7 +756,7 @@ app.get("/api/admin/overview", async (request, reply) => {
     LIMIT 20
   `;
   const sync = await sql<{ status: string; count: number }[]>`
-    SELECT status, count(*)::int AS count FROM sync_sessions GROUP BY status
+    SELECT status, CAST(COUNT(*) AS SIGNED) AS count FROM sync_sessions GROUP BY status
   `;
   const byName = Object.fromEntries(counts.map((row) => [row.name, row.count]));
   return {
@@ -783,7 +784,7 @@ app.post("/api/admin/invites", async (request, reply) => {
   const token = randomBytes(24).toString("hex");
   await sql`
     INSERT INTO admin_invites (token, created_by, expires_at)
-    VALUES (${token}, ${steamId}, now() + interval '48 hours')
+    VALUES (${token}, ${steamId}, NOW() + INTERVAL 48 HOUR)
   `;
   return { url: `${config.siteOrigin}/g/${config.adminPath}?invite=${token}` };
 });
