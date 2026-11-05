@@ -9,6 +9,30 @@ import Base from "../layouts/Base.astro";
   const params = new URLSearchParams(location.search);
   const id = params.get("id") ?? "";
   const sync = params.get("sync") ?? "";
+  if (sync === "wait") {
+    root.innerHTML = "<p>Steam принят. Tracker ещё отдаёт цифры — подожди на этой странице.</p>";
+    let done = false;
+    for (let i = 0; i < 60; i++) {
+      const data = await fetch("/api/auth/status").then((r) => r.json()).catch(() => null);
+      if (!data || data.status === "pending") {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        continue;
+      }
+      const path = data.next || (id ? `/p/?id=${id}` : "/ratings");
+      const url = new URL(path, location.origin);
+      if (data.status === "ok") {
+        if (data.flag) url.searchParams.set("sync", data.flag);
+        else url.searchParams.delete("sync");
+        if (!url.searchParams.get("id") && data.steamId) url.searchParams.set("id", data.steamId);
+      } else {
+        url.searchParams.set("sync", data.sync || "expired");
+      }
+      location.replace(url.pathname + url.search);
+      done = true;
+      break;
+    }
+    if (!done) location.replace("/ratings?sync=token_timeout");
+  } else {
   function money(value: number | null) {
     return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
   }
@@ -47,7 +71,9 @@ import Base from "../layouts/Base.astro";
       const mine = me.user?.steam_id === id;
       const empty = !profile.history.length;
       const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
-      const syncNote = sync === "game_running"
+      const syncNote = sync === "wait"
+        ? "Steam принят. Tracker ещё отдаёт цифры — подожди на этой странице."
+        : sync === "game_running"
         ? "WARDOGS была открыта — Tracker не отдал цифры. Полностью закрой игру и снова нажми «Подтянуть карьеру»."
         : sync === "token_timeout" || sync === "token_err"
           ? "Tracker долго отдавал ответ при входе. Полностью закрой WARDOGS и снова нажми «Подтянуть карьеру»."
@@ -118,5 +144,6 @@ import Base from "../layouts/Base.astro";
         location.href = `/auth/wardogs/start?next=/p&steamId=${id}`;
       });
     }
+  }
   }
 </script>

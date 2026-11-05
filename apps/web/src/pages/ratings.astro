@@ -64,19 +64,21 @@ import Base from "../layouts/Base.astro";
     }
     const data = await response.json();
     const sync = new URLSearchParams(location.search).get("sync");
-    const syncNote = sync === "game_running"
-      ? "Закрой WARDOGS и войди ещё раз: пока игра открыта, цифры не отдаются."
-      : sync === "access_denied"
-        ? "Вход отменён."
-        : sync === "expired"
-          ? "Вход не завершился. Нажми «Войти через Steam» ещё раз."
-          : sync === "token_timeout" || sync === "token_err"
-            ? "Tracker долго отдавал ответ. Полностью закрой WARDOGS и войди ещё раз."
-            : sync?.startsWith("token_")
-              ? "Обмен кода с Tracker не вышел. Закрой игру и нажми «Войти через Steam» снова."
-              : sync
-                ? "Игра не отдала цифры. Закрой её и войди ещё раз."
-                : "";
+    const syncNote = sync === "wait"
+      ? "Steam принят. Tracker ещё отдаёт цифры — подожди на этой странице, не закрывай вкладку."
+      : sync === "game_running"
+        ? "Закрой WARDOGS и войди ещё раз: пока игра открыта, цифры не отдаются."
+        : sync === "access_denied"
+          ? "Вход отменён."
+          : sync === "expired"
+            ? "Вход не завершился. Нажми «Войти через Steam» ещё раз."
+            : sync === "token_timeout" || sync === "token_err"
+              ? "Tracker долго отдавал ответ. Полностью закрой WARDOGS и войди ещё раз."
+              : sync?.startsWith("token_")
+                ? "Обмен кода с Tracker не вышел. Закрой игру и нажми «Войти через Steam» снова."
+                : sync
+                  ? "Игра не отдала цифры. Закрой её и войди ещё раз."
+                  : "";
     note.textContent = syncNote || `Сезон ${data.season}. Строк: ${data.players.length}.`;
     rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => `
       <tr id="p-${player.steam_id}">
@@ -109,4 +111,26 @@ import Base from "../layouts/Base.astro";
     document.getElementById(`p-${id}`)?.scrollIntoView({ block: "center" });
   });
   load();
+  if (new URLSearchParams(location.search).get("sync") === "wait") {
+    (async () => {
+      for (let i = 0; i < 60; i++) {
+        const data = await fetch("/api/auth/status").then((r) => r.json()).catch(() => null);
+        if (!data || data.status === "pending") {
+          await new Promise((ok) => setTimeout(ok, 2000));
+          continue;
+        }
+        const path = data.next || "/ratings";
+        const url = new URL(path, location.origin);
+        if (data.status === "ok") {
+          if (data.flag) url.searchParams.set("sync", data.flag);
+          else url.searchParams.delete("sync");
+        } else {
+          url.searchParams.set("sync", data.sync || "expired");
+        }
+        location.replace(url.pathname + url.search);
+        return;
+      }
+      location.replace("/ratings?sync=token_timeout");
+    })();
+  }
 </script>

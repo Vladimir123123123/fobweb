@@ -82,6 +82,23 @@ function readCookie(header: string | undefined, name: string) {
 
 const AUTH_COOKIE_AGE = 30 * 60;
 
+type LoginJob = {
+  where: string;
+  status: "pending" | "ok" | "fail";
+  fail?: string;
+  steamId?: string;
+  flag?: string;
+  at: number;
+};
+const loginJobs = new Map<string, LoginJob>();
+
+function pruneLoginJobs() {
+  const old = Date.now() - 10 * 60_000;
+  for (const [ticket, job] of loginJobs) {
+    if (job.at < old) loginJobs.delete(ticket);
+  }
+}
+
 function loginNext(next: string) {
   const value = next.startsWith("/") && !next.startsWith("//") ? next : "/ratings";
   return value === "/" ? "/ratings" : value;
@@ -442,6 +459,80 @@ app.get("/auth/wardogs/start", async (request, reply) => {
   ]);
 });
 
+type Traded = {
+  steamId?: string;
+  errorCode?: string;
+  player?: { steamId?: string; stats?: Parameters<typeof saveCareer>[1] };
+};
+
+async function tradeWardogsCode(code: string): Promise<{ fail: string; traded: Traded | null }> {
+  let tokenStatus = 0;
+  try {
+    const response = await fetch("https://wardogstracker.gg/api/v1/connect/token", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.trackerKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ code, redirect_uri: `${config.siteOrigin}/auth/wardogs` }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    tokenStatus = response.status;
+    const raw = await response.text();
+    let traded: Traded | null = null;
+    try {
+      traded = raw ? JSON.parse(raw) as Traded : null;
+    } catch {
+      app.log.error({ tokenStatus, detail: raw.slice(0, 300) }, "wardogs token non-json");
+      return { fail: `token_${tokenStatus || "err"}`, traded: null };
+    }
+    if (!response.ok) {
+      const errCode = traded?.errorCode || "";
+      const fail = errCode === "invalid_grant" ? "expired" : `token_${tokenStatus || "err"}`;
+      app.log.error({ tokenStatus, errCode, detail: raw.slice(0, 300) }, "wardogs token exchange failed");
+      return { fail, traded: null };
+    }
+    return { fail: "", traded };
+  } catch (error) {
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || /aborted|timeout/i.test(error.message));
+    const fail = timedOut ? "token_timeout" : "token_err";
+    app.log.error({ err: error, fail }, "wardogs token exchange exception");
+    return { fail, traded: null };
+  }
+}
+
+async function finishWardogsJob(ticket: string, code: string) {
+  const job = loginJobs.get(ticket);
+  if (!job || job.status !== "pending") return;
+  const { fail, traded } = await tradeWardogsCode(code);
+  const steamId = traded?.steamId || traded?.player?.steamId || "";
+  if (!steamId || !/^\d{17}$/.test(steamId)) {
+    job.status = "fail";
+    job.fail = fail || "token_err";
+    return;
+  }
+  const careerStats = traded?.player?.stats ?? null;
+  try {
+    await upsertUser(steamId);
+  } catch (error) {
+    app.log.error(error);
+    job.status = "fail";
+    job.fail = "retry";
+    return;
+  }
+  let saved = false;
+  try {
+    saved = await saveCareer(steamId, careerStats, "login", true);
+  } catch (error) {
+    app.log.error(error);
+  }
+  if (!saved) saved = await pullPublicCareer(steamId);
+  job.steamId = steamId;
+  job.flag = saved ? "" : careerStats == null ? "game_running" : "empty";
+  job.status = "ok";
+}
+
 app.get("/auth/wardogs", async (request, reply) => {
   const query = request.query as Record<string, unknown>;
   const state = text(query.state, 120);
@@ -458,79 +549,49 @@ app.get("/auth/wardogs", async (request, reply) => {
     app.log.error("TRACKER_KEY empty on wardogs callback");
     return reply.redirect(`${config.siteOrigin}${where}?sync=token_cfg`);
   }
-  type Traded = {
-    steamId?: string;
-    errorCode?: string;
-    player?: { steamId?: string; stats?: Parameters<typeof saveCareer>[1] };
-  };
-  let traded: Traded | null = null;
-  let tokenStatus = 0;
-  let tokenFail = "token_err";
-  try {
-    // Tracker при обмене кода снова читает карьеру из игры — 15 с мало, часто Abort → token_err.
-    const response = await fetch("https://wardogstracker.gg/api/v1/connect/token", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.trackerKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ code, redirect_uri: `${config.siteOrigin}/auth/wardogs` }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    tokenStatus = response.status;
-    const raw = await response.text();
-    try {
-      traded = raw ? JSON.parse(raw) as Traded : null;
-    } catch {
-      traded = null;
-      tokenFail = `token_${tokenStatus || "err"}`;
-      app.log.error({ tokenStatus, detail: raw.slice(0, 300) }, "wardogs token non-json");
-    }
-    if (!response.ok) {
-      const errCode = traded?.errorCode || "";
-      tokenFail = errCode === "invalid_grant" ? "expired" : `token_${tokenStatus || "err"}`;
-      app.log.error({ tokenStatus, errCode, detail: raw.slice(0, 300) }, "wardogs token exchange failed");
-      traded = null;
-    } else if (!traded?.steamId && !traded?.player?.steamId) {
-      tokenFail = `token_${tokenStatus || "err"}`;
-      app.log.error({ tokenStatus, detail: raw.slice(0, 300) }, "wardogs token missing steamId");
-    }
-  } catch (error) {
-    const timedOut = error instanceof Error && (error.name === "TimeoutError" || /aborted|timeout/i.test(error.message));
-    tokenFail = timedOut ? "token_timeout" : "token_err";
-    app.log.error({ err: error, tokenFail }, "wardogs token exchange exception");
-  }
-  const steamId = traded?.steamId || traded?.player?.steamId || "";
-  if (!steamId || !/^\d{17}$/.test(steamId)) {
-    return reply.redirect(`${config.siteOrigin}${where}?sync=${tokenFail}`);
-  }
-  const careerStats = traded?.player?.stats ?? null;
-  try {
-    await upsertUser(steamId);
-  } catch (error) {
+  pruneLoginJobs();
+  const ticket = randomBytes(16).toString("hex");
+  loginJobs.set(ticket, { where, status: "pending", at: Date.now() });
+  // Nginx/Plesk рвёт запрос ~60 с (504). Tracker часто дольше — обмен в фоне, сюда сразу 302.
+  void finishWardogsJob(ticket, code).catch((error) => {
     app.log.error(error);
-    return reply.redirect(`${config.siteOrigin}${where}?sync=retry`);
-  }
-  let saved = false;
-  try {
-    saved = await saveCareer(steamId, careerStats, "login", true);
-  } catch (error) {
-    app.log.error(error);
-  }
-  if (!saved) {
-    saved = await pullPublicCareer(steamId);
-  }
-  // stats:null почти всегда = WARDOGS открыта во время входа
-  const flag = saved ? "" : careerStats == null ? "game_running" : "empty";
+    const job = loginJobs.get(ticket);
+    if (job && job.status === "pending") {
+      job.status = "fail";
+      job.fail = "token_err";
+    }
+  });
   writeCookies(reply, [
-    cookieString("wd_session", createSession(steamId), 14 * 24 * 3600),
+    cookieString("wd_login", ticket, AUTH_COOKIE_AGE),
     cookieString("wd_next", "", 0),
     cookieString("wd_wdt", "", 0),
   ]);
   const back = new URL(where, config.siteOrigin);
-  if (flag) back.searchParams.set("sync", flag);
+  back.searchParams.set("sync", "wait");
   return reply.redirect(back.toString());
+});
+
+app.get("/api/auth/status", async (request, reply) => {
+  pruneLoginJobs();
+  const ticket = readCookie(request.headers.cookie, "wd_login");
+  const job = ticket ? loginJobs.get(ticket) : null;
+  if (!job) return { status: "missing" };
+  if (job.status === "pending") return { status: "pending" };
+  if (job.status === "ok" && job.steamId) {
+    writeCookies(reply, [
+      cookieString("wd_session", createSession(job.steamId), 14 * 24 * 3600),
+      cookieString("wd_login", "", 0),
+      cookieString("wd_next", "", 0),
+      cookieString("wd_wdt", "", 0),
+    ]);
+    loginJobs.delete(ticket);
+    return { status: "ok", steamId: job.steamId, flag: job.flag || "", next: job.where };
+  }
+  writeCookies(reply, [cookieString("wd_login", "", 0)]);
+  const fail = job.fail || "token_err";
+  const next = job.where;
+  loginJobs.delete(ticket);
+  return { status: "fail", sync: fail, next };
 });
 
 app.get("/auth/steam/callback", async (request, reply) => {
