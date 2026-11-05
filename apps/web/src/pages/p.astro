@@ -21,7 +21,19 @@ import Base from "../layouts/Base.astro";
     return `<svg class="chart" viewBox="0 0 280 90"><path d="${d}" fill="none" stroke="#e6b34d" stroke-width="2"/></svg>`;
   }
   if (!/^\d{17}$/.test(id)) {
-    root.innerHTML = "<h1>Такой страницы нет</h1>";
+    // После OAuth иногда попадаем на /p/ без id — открываем свой профиль.
+    try {
+      const me = await fetch("/api/me").then((r) => r.json());
+      const mine = me?.user?.steam_id;
+      if (/^\d{17}$/.test(mine || "")) {
+        const q = sync ? `&sync=${encodeURIComponent(sync)}` : "";
+        location.replace(`/p/?id=${mine}${q}`);
+      } else {
+        root.innerHTML = `<h1>Такой страницы нет</h1><p><a class="btn" href="/auth/wardogs/start?next=/ratings">Войти + карьера</a></p>`;
+      }
+    } catch {
+      root.innerHTML = "<h1>Такой страницы нет</h1>";
+    }
   } else {
     const [profile, me] = await Promise.all([
       fetch(`/api/players/${id}`).then(async (response) => response.ok ? response.json() : null),
@@ -71,7 +83,7 @@ import Base from "../layouts/Base.astro";
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
           ${empty
-            ? `<a class="btn small" href="/auth/wardogs/start?next=${encodeURIComponent(`/p?id=${id}`)}">Подтянуть карьеру</a>`
+            ? `<a class="btn small" href="/auth/wardogs/start?next=/p&steamId=${id}">Подтянуть карьеру</a>`
             : `<button class="btn small" id="resync" type="button">Обновить цифры</button>`}
           <label><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
           ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : ""}
@@ -101,8 +113,7 @@ import Base from "../layouts/Base.astro";
           location.href = next;
           return;
         }
-        // Нет снимка в Tracker Connect — обычная ссылка надёжнее location после fetch.
-        location.href = `/auth/wardogs/start?next=${encodeURIComponent(next)}`;
+        location.href = `/auth/wardogs/start?next=/p&steamId=${id}`;
       });
     }
   }

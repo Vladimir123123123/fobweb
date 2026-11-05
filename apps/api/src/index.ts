@@ -423,7 +423,13 @@ app.get("/auth/wardogs/start", async (request, reply) => {
   if (!config.trackerKey || !config.trackerClientId) {
     return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
   }
-  const next = loginNext(text((request.query as Record<string, unknown>).next, 200));
+  const query = request.query as Record<string, unknown>;
+  // next=/p?id=… ломается в query-string (второй ?). Для профиля: next=/p&steamId=…
+  const steamId = text(query.steamId, 20);
+  let next = loginNext(text(query.next, 200));
+  if (/^\d{17}$/.test(steamId) && (next === "/p" || next === "/p/" || next.startsWith("/p?"))) {
+    next = `/p/?id=${steamId}`;
+  }
   const state = randomBytes(16).toString("hex");
   await rememberAuth(state, next);
   const url = new URL("https://wardogstracker.gg/api/connect");

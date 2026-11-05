@@ -46,14 +46,13 @@ async function paintAccount() {
     if (!response.ok) throw new Error("api");
     const data = await response.json();
     const user = data.user;
-    const next = encodeURIComponent(location.pathname + location.search);
     if (!user) {
       // Цифры карьеры — только через Tracker Connect; Steam-only аккаунт без снимка.
-      slot.innerHTML = `<a class="btn small" href="/auth/wardogs/start?next=${next}">Войти + карьера</a>`;
+      slot.innerHTML = `<a class="btn small" href="/auth/wardogs/start?next=/ratings">Войти + карьера</a>`;
       return;
     }
     const name = user.persona || user.steam_id;
-    slot.innerHTML = `<a href="/p?id=${user.steam_id}">${name}</a> <button class="btn ghost small" type="button" id="logout">Выйти</button>`;
+    slot.innerHTML = `<a href="/p/?id=${user.steam_id}">${name}</a> <button class="btn ghost small" type="button" id="logout">Выйти</button>`;
     document.querySelector("#logout")?.addEventListener("click", () => {
       location.href = "/auth/logout";
     });
