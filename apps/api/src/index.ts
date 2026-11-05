@@ -210,12 +210,18 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, b
     done(new Error("bad_json"), undefined);
   }
 });
+app.addContentTypeParser("*", { parseAs: "string" }, (_request, body, done) => {
+  done(null, body || "");
+});
 
 app.setErrorHandler((error, _request, reply) => {
   const message = error instanceof Error ? error.message : "";
   if (message === "bad_json") return reply.code(400).send({ error: "bad_request" });
-  app.log.error(error);
-  return reply.code(500).send({ error: "server" });
+  const status = typeof (error as { statusCode?: number }).statusCode === "number"
+    ? (error as { statusCode: number }).statusCode
+    : 500;
+  if (status >= 500) app.log.error(error);
+  return reply.code(status).send({ error: status === 415 ? "unsupported_type" : "server" });
 });
 
 app.get("/api/health", async () => {
@@ -301,6 +307,11 @@ app.get("/auth/steam/callback", async (request, reply) => {
   reply.raw.setHeader("Set-Cookie", [cookie.join("; "), "wd_next=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"]);
   if (saved) return reply.redirect(`${config.siteOrigin}${where}`);
   return reply.redirect(`${config.siteOrigin}/p?id=${steamId}&sync=empty`);
+});
+
+app.get("/auth/logout", async (_request, reply) => {
+  clearSession(reply);
+  return reply.redirect(`${config.siteOrigin}/`);
 });
 
 app.post("/auth/logout", async (_request, reply) => {

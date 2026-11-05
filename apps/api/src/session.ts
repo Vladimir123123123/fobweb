@@ -42,11 +42,13 @@ export function setSession(reply: FastifyReply, steamId: string) {
     `Max-Age=${14 * 24 * 3600}`,
   ];
   if (config.secureCookie) parts.push("Secure");
-  reply.header("set-cookie", parts.join("; "));
+  reply.raw.setHeader("Set-Cookie", parts.join("; "));
 }
 
 export function clearSession(reply: FastifyReply) {
-  const parts = ["wd_session=", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
-  if (config.secureCookie) parts.push("Secure");
-  reply.header("set-cookie", parts.join("; "));
+  // Две строки: старая кука могла быть и с Secure, и без.
+  reply.raw.setHeader("Set-Cookie", [
+    "wd_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+    "wd_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure",
+  ]);
 }

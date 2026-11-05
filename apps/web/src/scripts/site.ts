@@ -52,9 +52,8 @@ async function paintAccount() {
     }
     const name = user.persona || user.steam_id;
     slot.innerHTML = `<a href="/p?id=${user.steam_id}">${name}</a> <button class="btn ghost small" type="button" id="logout">Выйти</button>`;
-    document.querySelector("#logout")?.addEventListener("click", async () => {
-      await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
-      location.href = "/";
+    document.querySelector("#logout")?.addEventListener("click", () => {
+      location.href = "/auth/logout";
     });
   } catch {
     slot.innerHTML = `<a class="btn ghost small" href="/auth/steam">Войти через Steam</a>`;
