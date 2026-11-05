@@ -201,6 +201,109 @@ async function upsertUser(steamId: string) {
   `;
 }
 
+const ROLE_KEYS = ["assault", "medic", "recon", "support", "driver", "pilot"] as const;
+
+function primaryClassOf(snap: Record<string, unknown> | null | undefined) {
+  if (!snap) return null;
+  let best: (typeof ROLE_KEYS)[number] | null = null;
+  let peak = 0;
+  for (const key of ROLE_KEYS) {
+    const value = Number(snap[`role_${key}`] ?? 0);
+    if (!Number.isFinite(value) || value <= peak) continue;
+    peak = value;
+    best = key;
+  }
+  return peak > 0 ? best : null;
+}
+
+function botAuthorized(request: FastifyRequest) {
+  return Boolean(config.botKey && request.headers["x-bot-key"] === config.botKey);
+}
+
+async function latestSnapshot(steamId: string) {
+  const rows = await sql<Record<string, unknown>[]>`
+    SELECT steam_id, season, wardog_level, xp, account_value, cash, gold, unlocks,
+           role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source, created_at
+    FROM snapshots
+    WHERE steam_id = ${steamId} AND season = ${config.season}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+async function pullConnectCareer(steamId: string) {
+  if (!config.trackerKey) return false;
+  try {
+    const response = await fetch(`https://wardogstracker.gg/api/v1/connect/players/${steamId}`, {
+      headers: { authorization: `Bearer ${config.trackerKey}` },
+    });
+    if (!response.ok) return false;
+    const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
+    return saveCareer(steamId, body.player?.stats ?? null, "bot_connect", false);
+  } catch {
+    return false;
+  }
+}
+
+async function ensureCareer(steamId: string) {
+  if (await pullConnectCareer(steamId)) return true;
+  return pullPublicCareer(steamId);
+}
+
+async function upsertBotUser(steamId: string, discordId: string, discordName: string) {
+  const profile = await steamProfile(steamId);
+  await sql`
+    INSERT INTO users (steam_id, persona, avatar, country, cis_opt_in, hide_leaderboard, discord_id, discord_name, last_login_at)
+    VALUES (
+      ${steamId}, ${profile.persona}, ${profile.avatar}, ${profile.country},
+      1, 0, ${discordId || null}, ${discordName || null}, NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+      persona = COALESCE(VALUES(persona), persona),
+      avatar = COALESCE(VALUES(avatar), avatar),
+      country = COALESCE(VALUES(country), country),
+      cis_opt_in = 1,
+      hide_leaderboard = 0,
+      discord_id = COALESCE(VALUES(discord_id), discord_id),
+      discord_name = COALESCE(VALUES(discord_name), discord_name),
+      last_login_at = NOW()
+  `;
+}
+
+async function joinFobSquad(steamId: string) {
+  const squads = await sql<{ id: number }[]>`
+    SELECT id FROM squads
+    WHERE UPPER(tag) = 'FOB' AND status = 'approved'
+    ORDER BY id ASC
+    LIMIT 1
+  `;
+  const squadId = squads[0]?.id;
+  if (!squadId) return false;
+  await sql.begin(async (tx) => {
+    await tx`DELETE FROM squad_members WHERE steam_id = ${steamId}`;
+    await tx`
+      INSERT INTO squad_members (squad_id, steam_id, role, status)
+      VALUES (${squadId}, ${steamId}, 'member', 'member')
+    `;
+  });
+  return true;
+}
+
+async function botPlayerPayload(steamId: string) {
+  const users = await sql<Record<string, unknown>[]>`
+    SELECT steam_id, persona, avatar, country, cis_opt_in, hide_leaderboard, discord_id, discord_name
+    FROM users WHERE steam_id = ${steamId}
+  `;
+  if (!users.length) return null;
+  const snapshot = await latestSnapshot(steamId);
+  return {
+    user: users[0],
+    snapshot,
+    primaryClass: primaryClassOf(snapshot),
+  };
+}
+
 const app = Fastify({ logger: { level: "info" }, bodyLimit: 2_000_000 });
 app.removeContentTypeParser("application/json");
 app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
@@ -481,6 +584,110 @@ app.get("/api/players/:steamId", async (request, reply) => {
   `;
   const sync = await sql`SELECT status, expires_at, updated_at FROM sync_sessions WHERE steam_id = ${steamId}`;
   return { user: users[0], history, squad: squads[0] ?? null, sync: sync[0] ?? null };
+});
+
+app.post("/api/bot/link", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const body = asObject(request.body);
+  const steamId = text(body?.steamId, 20);
+  const discordId = text(body?.discordId, 32);
+  const discordName = text(body?.discordName, 80);
+  if (!/^\d{17}$/.test(steamId) || !/^\d{5,32}$/.test(discordId)) {
+    return reply.code(400).send({ error: "bad_request" });
+  }
+  await upsertBotUser(steamId, discordId, discordName);
+  const pulled = await ensureCareer(steamId);
+  const joinedFob = await joinFobSquad(steamId);
+  const payload = await botPlayerPayload(steamId);
+  return { ok: true, pulled, joinedFob, ...payload };
+});
+
+app.get("/api/bot/player/:steamId", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const steamId = (request.params as { steamId: string }).steamId;
+  if (!/^\d{17}$/.test(steamId)) return reply.code(400).send({ error: "bad_request" });
+  const payload = await botPlayerPayload(steamId);
+  if (!payload) return notFound(reply);
+  return payload;
+});
+
+app.post("/api/bot/refresh/:steamId", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const steamId = (request.params as { steamId: string }).steamId;
+  if (!/^\d{17}$/.test(steamId)) return reply.code(400).send({ error: "bad_request" });
+  const known = await sql`SELECT steam_id FROM users WHERE steam_id = ${steamId}`;
+  if (!known.length) return notFound(reply);
+  const pulled = await ensureCareer(steamId);
+  const payload = await botPlayerPayload(steamId);
+  return { ok: true, pulled, ...payload };
+});
+
+app.get("/api/bot/board", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const query = request.query as Record<string, unknown>;
+  const sort = SORTS[text(query.sort, 20)] ? text(query.sort, 20) : "level";
+  const column = SORTS[sort];
+  const season = text(query.season, 20) || config.season;
+  const fobOnly = text(query.fob, 8) === "1" || text(query.fob, 8).toLowerCase() === "true";
+  if (!/^[a-z_]+$/.test(column)) return { season, sort, players: [] };
+  const rows = await sql.unsafe(
+    `SELECT s.steam_id, s.season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
+            s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
+            s.created_at, u.persona, u.avatar, u.country, u.discord_id, u.discord_name
+     FROM snapshots s
+     JOIN users u ON u.steam_id = s.steam_id
+     JOIN (
+       SELECT steam_id, MAX(created_at) AS created_at
+       FROM snapshots
+       WHERE season = ?
+       GROUP BY steam_id
+     ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
+     WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
+       AND (
+         ? = 0 OR EXISTS (
+           SELECT 1 FROM squad_members m
+           JOIN squads sq ON sq.id = m.squad_id
+           WHERE m.steam_id = s.steam_id AND m.status = 'member'
+             AND sq.status = 'approved' AND UPPER(sq.tag) = 'FOB'
+         )
+       )
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC
+     LIMIT 200`,
+    [season, fobOnly ? 1 : 0],
+  );
+  return {
+    season,
+    sort,
+    players: rows.map((row, index) => ({
+      ...row,
+      rank: index + 1,
+      primaryClass: primaryClassOf(row),
+    })),
+  };
+});
+
+app.post("/api/bot/import", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const body = asObject(request.body);
+  const players = Array.isArray(body?.players) ? body.players : [];
+  if (!players.length || players.length > 500) return reply.code(400).send({ error: "bad_request" });
+  const results: Array<{ steamId: string; ok: boolean; pulled: boolean; primaryClass: string | null }> = [];
+  for (const item of players) {
+    const row = asObject(item);
+    const steamId = text(row?.steamId, 20);
+    const discordId = text(row?.discordId, 32);
+    const discordName = text(row?.discordName, 80);
+    if (!/^\d{17}$/.test(steamId)) {
+      results.push({ steamId, ok: false, pulled: false, primaryClass: null });
+      continue;
+    }
+    await upsertBotUser(steamId, discordId, discordName);
+    const pulled = await ensureCareer(steamId);
+    await joinFobSquad(steamId);
+    const payload = await botPlayerPayload(steamId);
+    results.push({ steamId, ok: true, pulled, primaryClass: payload?.primaryClass ?? null });
+  }
+  return { ok: true, count: results.length, results };
 });
 
 app.post("/api/internal/sync", async (request, reply) => {
