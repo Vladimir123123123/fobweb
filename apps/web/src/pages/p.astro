@@ -49,17 +49,19 @@ import Base from "../layouts/Base.astro";
       const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
       const syncNote = sync === "game_running"
         ? "WARDOGS была открыта — Tracker не отдал цифры. Полностью закрой игру и снова нажми «Подтянуть карьеру»."
-        : sync.startsWith("token_")
-          ? "Вход в Tracker не завершился (код обмена). Закрой игру и нажми «Подтянуть карьеру» ещё раз."
-          : sync === "empty" || empty
-          ? "Цифр ещё нет. Закрой WARDOGS → «Подтянуть карьеру» → Steam. Обычный вход через Steam цифры не даёт."
-          : sync === "access_denied"
-            ? "Вход отменён."
-            : sync === "expired"
-              ? "Сессия входа истекла. Нажми «Подтянуть карьеру» снова."
-            : sync
-              ? `Не вышло (${sync}). Закрой игру и повтори «Подтянуть карьеру».`
-              : "";
+        : sync === "token_timeout" || sync === "token_err"
+          ? "Tracker долго отдавал ответ при входе. Полностью закрой WARDOGS и снова нажми «Подтянуть карьеру»."
+          : sync.startsWith("token_")
+            ? "Вход в Tracker не завершился. Закрой игру и нажми «Подтянуть карьеру» ещё раз."
+            : sync === "empty" || empty
+              ? "Цифр ещё нет. Закрой WARDOGS → «Подтянуть карьеру» → Steam. Обычный вход через Steam цифры не даёт."
+              : sync === "access_denied"
+                ? "Вход отменён."
+                : sync === "expired"
+                  ? "Сессия входа истекла. Нажми «Подтянуть карьеру» снова."
+                  : sync
+                    ? `Не вышло (${sync}). Закрой игру и повтори «Подтянуть карьеру».`
+                    : "";
       root.innerHTML = `
         <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
         <p>Steam ${user.steam_id}${user.country ? ` · ${user.country}` : ""}${user.discord_name ? ` · Discord ${user.discord_name}` : ""}</p>

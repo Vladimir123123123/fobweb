@@ -454,47 +454,77 @@ app.get("/auth/wardogs", async (request, reply) => {
     return reply.redirect(`${config.siteOrigin}${where}?sync=${encodeURIComponent(failure)}`);
   }
   if (!code) return reply.redirect(`${config.siteOrigin}${where}?sync=expired`);
-  type Traded = { steamId?: string; player?: { stats?: Parameters<typeof saveCareer>[1] } };
+  if (!config.trackerKey) {
+    app.log.error("TRACKER_KEY empty on wardogs callback");
+    return reply.redirect(`${config.siteOrigin}${where}?sync=token_cfg`);
+  }
+  type Traded = {
+    steamId?: string;
+    errorCode?: string;
+    player?: { steamId?: string; stats?: Parameters<typeof saveCareer>[1] };
+  };
   let traded: Traded | null = null;
   let tokenStatus = 0;
+  let tokenFail = "token_err";
   try {
+    // Tracker при обмене кода снова читает карьеру из игры — 15 с мало, часто Abort → token_err.
     const response = await fetch("https://wardogstracker.gg/api/v1/connect/token", {
       method: "POST",
-      headers: { authorization: `Bearer ${config.trackerKey}`, "content-type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${config.trackerKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify({ code, redirect_uri: `${config.siteOrigin}/auth/wardogs` }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(120_000),
     });
     tokenStatus = response.status;
-    traded = response.ok ? await response.json() as Traded : null;
+    const raw = await response.text();
+    try {
+      traded = raw ? JSON.parse(raw) as Traded : null;
+    } catch {
+      traded = null;
+      tokenFail = `token_${tokenStatus || "err"}`;
+      app.log.error({ tokenStatus, detail: raw.slice(0, 300) }, "wardogs token non-json");
+    }
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      app.log.error({ tokenStatus, detail: detail.slice(0, 300) }, "wardogs token exchange failed");
+      const errCode = traded?.errorCode || "";
+      tokenFail = errCode === "invalid_grant" ? "expired" : `token_${tokenStatus || "err"}`;
+      app.log.error({ tokenStatus, errCode, detail: raw.slice(0, 300) }, "wardogs token exchange failed");
+      traded = null;
+    } else if (!traded?.steamId && !traded?.player?.steamId) {
+      tokenFail = `token_${tokenStatus || "err"}`;
+      app.log.error({ tokenStatus, detail: raw.slice(0, 300) }, "wardogs token missing steamId");
     }
   } catch (error) {
-    app.log.error(error);
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || /aborted|timeout/i.test(error.message));
+    tokenFail = timedOut ? "token_timeout" : "token_err";
+    app.log.error({ err: error, tokenFail }, "wardogs token exchange exception");
   }
-  if (!traded?.steamId || !/^\d{17}$/.test(traded.steamId)) {
-    return reply.redirect(`${config.siteOrigin}${where}?sync=token_${tokenStatus || "err"}`);
+  const steamId = traded?.steamId || traded?.player?.steamId || "";
+  if (!steamId || !/^\d{17}$/.test(steamId)) {
+    return reply.redirect(`${config.siteOrigin}${where}?sync=${tokenFail}`);
   }
+  const careerStats = traded?.player?.stats ?? null;
   try {
-    await upsertUser(traded.steamId);
+    await upsertUser(steamId);
   } catch (error) {
     app.log.error(error);
     return reply.redirect(`${config.siteOrigin}${where}?sync=retry`);
   }
   let saved = false;
   try {
-    saved = await saveCareer(traded.steamId, traded.player?.stats ?? null, "login", true);
+    saved = await saveCareer(steamId, careerStats, "login", true);
   } catch (error) {
     app.log.error(error);
   }
   if (!saved) {
-    saved = await pullPublicCareer(traded.steamId);
+    saved = await pullPublicCareer(steamId);
   }
   // stats:null почти всегда = WARDOGS открыта во время входа
-  const flag = saved ? "" : traded.player?.stats == null ? "game_running" : "empty";
+  const flag = saved ? "" : careerStats == null ? "game_running" : "empty";
   writeCookies(reply, [
-    cookieString("wd_session", createSession(traded.steamId), 14 * 24 * 3600),
+    cookieString("wd_session", createSession(steamId), 14 * 24 * 3600),
     cookieString("wd_next", "", 0),
     cookieString("wd_wdt", "", 0),
   ]);

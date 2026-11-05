@@ -70,9 +70,13 @@ import Base from "../layouts/Base.astro";
         ? "Вход отменён."
         : sync === "expired"
           ? "Вход не завершился. Нажми «Войти через Steam» ещё раз."
-          : sync
-            ? "Игра не отдала цифры. Закрой её и войди ещё раз."
-            : "";
+          : sync === "token_timeout" || sync === "token_err"
+            ? "Tracker долго отдавал ответ. Полностью закрой WARDOGS и войди ещё раз."
+            : sync?.startsWith("token_")
+              ? "Обмен кода с Tracker не вышел. Закрой игру и нажми «Войти через Steam» снова."
+              : sync
+                ? "Игра не отдала цифры. Закрой её и войди ещё раз."
+                : "";
     note.textContent = syncNote || `Сезон ${data.season}. Строк: ${data.players.length}.`;
     rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => `
       <tr id="p-${player.steam_id}">
