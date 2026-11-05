@@ -66,11 +66,13 @@ import Base from "../layouts/Base.astro";
         <p class="note">Снимков: ${profile.history.length}.</p>
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
-          <button class="btn small" id="resync" type="button">${empty ? "Подтянуть карьеру" : "Обновить цифры"}</button>
+          ${empty
+            ? `<a class="btn small" href="/auth/wardogs/start?next=${encodeURIComponent(`/p?id=${id}`)}">Подтянуть карьеру</a>`
+            : `<button class="btn small" id="resync" type="button">Обновить цифры</button>`}
           <label><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
           ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : ""}
         </div>
-        <p class="note">Для цифр нужна авторизация WARDOGS Tracker (не обычный Steam). Игра должна быть закрыта.</p>` : ""}
+        <p class="note">Цифры даёт WARDOGS Tracker: закрой игру → «Подтянуть карьеру» → Steam. Обычный «Войти через Steam» цифры не приносит.</p>` : ""}
       `;
       const save = async () => {
         const show = (document.querySelector("#show-top") as HTMLInputElement).checked;
@@ -95,12 +97,8 @@ import Base from "../layouts/Base.astro";
           location.href = next;
           return;
         }
-        if (body.needConnect || body.careerConnect) {
-          note.textContent = "Нужен вход через WARDOGS Tracker. Закрой игру — сейчас открою окно входа…";
-          location.href = `/auth/wardogs/start?next=${encodeURIComponent(next)}`;
-          return;
-        }
-        note.textContent = "Цифры сейчас не отдаются. Закрой WARDOGS и попробуй снова.";
+        // Нет снимка в Tracker Connect — обычная ссылка надёжнее location после fetch.
+        location.href = `/auth/wardogs/start?next=${encodeURIComponent(next)}`;
       });
     }
   }
