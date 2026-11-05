@@ -68,9 +68,11 @@ import Base from "../layouts/Base.astro";
       ? "Закрой WARDOGS и войди ещё раз: пока игра открыта, цифры не отдаются."
       : sync === "access_denied"
         ? "Вход отменён."
-        : sync
-          ? "Игра не отдала цифры. Закрой её и войди ещё раз."
-          : "";
+        : sync === "expired"
+          ? "Вход не завершился. Нажми «Войти через Steam» ещё раз."
+          : sync
+            ? "Игра не отдала цифры. Закрой её и войди ещё раз."
+            : "";
     note.textContent = syncNote || `Сезон ${data.season}. Строк: ${data.players.length}.`;
     rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => `
       <tr id="p-${player.steam_id}">

@@ -21,31 +21,40 @@ export async function verifySteamLogin(query: Record<string, unknown>) {
     params.set(key, value);
   }
   params.set("openid.mode", "check_authentication");
-  const response = await fetch("https://steamcommunity.com/openid/login", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-  const text = await response.text();
-  if (!text.includes("is_valid:true")) return null;
-  const claimed = String(query["openid.claimed_id"] ?? "");
-  return claimed.match(/\/id\/(\d{17})$/)?.[1] ?? null;
+  try {
+    const response = await fetch("https://steamcommunity.com/openid/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: params,
+      signal: AbortSignal.timeout(10_000),
+    });
+    const text = await response.text();
+    if (!text.includes("is_valid:true")) return null;
+    const claimed = String(query["openid.claimed_id"] ?? "");
+    return claimed.match(/\/id\/(\d{17})$/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function steamProfile(steamId: string) {
   if (!config.steamKey) return { persona: null, avatar: null, country: null };
-  const url = new URL("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/");
-  url.searchParams.set("key", config.steamKey);
-  url.searchParams.set("steamids", steamId);
-  const response = await fetch(url);
-  if (!response.ok) return { persona: null, avatar: null, country: null };
-  const payload = (await response.json()) as { response?: { players?: Array<Record<string, string>> } };
-  const player = payload.response?.players?.[0];
-  return {
-    persona: player?.personaname ?? null,
-    avatar: player?.avatarfull ?? null,
-    country: player?.loccountrycode ?? null,
-  };
+  try {
+    const url = new URL("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/");
+    url.searchParams.set("key", config.steamKey);
+    url.searchParams.set("steamids", steamId);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) return { persona: null, avatar: null, country: null };
+    const payload = (await response.json()) as { response?: { players?: Array<Record<string, string>> } };
+    const player = payload.response?.players?.[0];
+    return {
+      persona: player?.personaname ?? null,
+      avatar: player?.avatarfull ?? null,
+      country: player?.loccountrycode ?? null,
+    };
+  } catch {
+    return { persona: null, avatar: null, country: null };
+  }
 }
 
 export function cisByCountry(country: string | null) {

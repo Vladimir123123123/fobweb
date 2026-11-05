@@ -33,22 +33,23 @@ export function readSession(request: FastifyRequest): Session | null {
   }
 }
 
-export function setSession(reply: FastifyReply, steamId: string) {
-  const parts = [
-    `wd_session=${createSession(steamId)}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-    `Max-Age=${14 * 24 * 3600}`,
-  ];
+export function cookieString(name: string, value: string, maxAge: number) {
+  const parts = [`${name}=${value}`, "Path=/", "HttpOnly", "SameSite=Lax", `Max-Age=${maxAge}`];
   if (config.secureCookie) parts.push("Secure");
-  reply.raw.setHeader("Set-Cookie", parts.join("; "));
+  return parts.join("; ");
+}
+
+export function writeCookies(reply: FastifyReply, cookies: string[]) {
+  reply.header("set-cookie", cookies);
+}
+
+export function setSession(reply: FastifyReply, steamId: string) {
+  writeCookies(reply, [cookieString("wd_session", createSession(steamId), 14 * 24 * 3600)]);
 }
 
 export function clearSession(reply: FastifyReply) {
-  // Две строки: старая кука могла быть и с Secure, и без.
-  reply.raw.setHeader("Set-Cookie", [
-    "wd_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+  writeCookies(reply, [
+    cookieString("wd_session", "", 0),
     "wd_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure",
   ]);
 }
