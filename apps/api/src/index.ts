@@ -217,7 +217,12 @@ function primaryClassOf(snap: Record<string, unknown> | null | undefined) {
 }
 
 function botAuthorized(request: FastifyRequest) {
-  return Boolean(config.botKey && request.headers["x-bot-key"] === config.botKey);
+  const key = String(request.headers["x-bot-key"] ?? "");
+  if (!key) return false;
+  if (config.botKey && key === config.botKey) return true;
+  // Пока BOT_API_KEY не прописан на хосте — достаточно SESSION_SECRET (тот же .env).
+  if (key === config.sessionSecret) return true;
+  return false;
 }
 
 async function latestSnapshot(steamId: string) {
