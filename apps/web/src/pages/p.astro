@@ -67,23 +67,19 @@ import Base from "../layouts/Base.astro";
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
           <button class="btn small" id="resync" type="button">Обновить цифры</button>
-          <label><input id="cis" type="checkbox" ${user.cis_opt_in ? "checked" : ""}/> Участвовать в топе СНГ</label>
-          <label><input id="hide" type="checkbox" ${user.hide_leaderboard ? "checked" : ""}/> Скрыть из топа</label>
+          <label><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
           ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : `<span class="note">Привязка Discord на сервере выключена. На вход она не влияет.</span>`}
         </div>` : ""}
       `;
       const save = async () => {
+        const show = (document.querySelector("#show-top") as HTMLInputElement).checked;
         await fetch("/api/me", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            cisOptIn: (document.querySelector("#cis") as HTMLInputElement).checked,
-            hideLeaderboard: (document.querySelector("#hide") as HTMLInputElement).checked,
-          }),
+          body: JSON.stringify({ showInTop: show }),
         });
       };
-      document.querySelector("#cis")?.addEventListener("change", save);
-      document.querySelector("#hide")?.addEventListener("change", save);
+      document.querySelector("#show-top")?.addEventListener("change", save);
       document.querySelector("#resync")?.addEventListener("click", async () => {
         const note = document.querySelector("#sync-note")!;
         note.textContent = "Обновляю…";

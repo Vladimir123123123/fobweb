@@ -55,9 +55,13 @@ export function getStaticPaths() {
       <div class="scroll"><table><tbody>
         ${data.days.map((row: { day: string; count: number }) => `<tr><td>${row.day}</td><td>${row.count}</td></tr>`).join("")}
       </tbody></table></div>
-      <h2>Игроки</h2>
+      <h2>Игроки в топе</h2>
+      <p class="note">По умолчанию все в рейтинге. Здесь можно скрыть или вернуть вручную.</p>
       <div class="scroll"><table><tbody id="players">
-        ${data.players.map((player: { steam_id: string; persona: string | null; hide_leaderboard: boolean }) => `<tr><td><a href="/p?id=${player.steam_id}">${player.persona ?? player.steam_id}</a></td><td><button class="btn ghost small" data-hide="${player.steam_id}" data-on="${player.hide_leaderboard ? "1" : "0"}" type="button">${player.hide_leaderboard ? "Вернуть в топ" : "Скрыть"}</button></td></tr>`).join("")}
+        ${data.players.map((player: { steam_id: string; persona: string | null; hide_leaderboard: boolean; cis_opt_in?: boolean }) => {
+          const hidden = Boolean(player.hide_leaderboard) || player.cis_opt_in === false;
+          return `<tr><td><a href="/p?id=${player.steam_id}">${player.persona ?? player.steam_id}</a></td><td>${hidden ? "скрыт" : "в топе"}</td><td><button class="btn ghost small" data-hide="${player.steam_id}" data-on="${hidden ? "1" : "0"}" type="button">${hidden ? "Показать в топе" : "Скрыть из топа"}</button></td></tr>`;
+        }).join("")}
       </tbody></table></div>
       <h2>Картинки сквадов</h2>
       <div id="assets">${(data.assets ?? []).map((asset: { id: number; kind: string; path: string; discord_url: string; tag: string; name: string }) => `<article class="panel"><img class="${asset.kind === "logo" ? "asset-preview logo" : "asset-preview"}" src="/api/media/${esc(asset.path)}" alt="" /><p>[${esc(asset.tag)}] ${esc(asset.name)} · ${asset.kind === "logo" ? "логотип" : "баннер"}</p>${asset.discord_url ? `<p>${esc(asset.discord_url)}</p>` : ""}<button class="btn small" data-asset="${asset.id}" data-accept="1" type="button">Одобрить</button> <button class="btn ghost small" data-asset="${asset.id}" data-accept="0" type="button">Отклонить</button></article>`).join("") || "<p>Новых картинок нет.</p>"}</div>

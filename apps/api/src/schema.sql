@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   persona varchar(80),
   avatar varchar(300),
   country varchar(8),
-  cis_opt_in tinyint(1) NOT NULL DEFAULT 0,
+  cis_opt_in tinyint(1) NOT NULL DEFAULT 1,
   hide_leaderboard tinyint(1) NOT NULL DEFAULT 0,
   discord_id varchar(32),
   discord_name varchar(80),

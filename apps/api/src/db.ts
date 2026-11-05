@@ -83,6 +83,9 @@ export async function migrate() {
   const schema = readFileSync(fileURLToPath(new URL("./schema.sql", import.meta.url)), "utf8");
   const statements = schema.split(/;\s*\n/).map((part) => part.trim()).filter(Boolean);
   for (const statement of statements) await sql.unsafe(statement);
+  // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
+  await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
+  await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;
   if (config.ownerSteamId) {
     await sql`INSERT IGNORE INTO admins (steam_id) VALUES (${config.ownerSteamId})`;
   }

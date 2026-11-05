@@ -5,7 +5,7 @@ import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
-import { cisByCountry, steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
+import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 const SORTS: Record<string, string> = {
   level: "wardog_level",
@@ -247,21 +247,19 @@ async function refreshCareers() {
 async function fillSteamProfile(steamId: string) {
   const profile = await steamProfile(steamId);
   if (!profile.persona && !profile.avatar && !profile.country) return;
-  const opted = cisByCountry(profile.country);
   await sql`
     UPDATE users SET
       persona = COALESCE(${profile.persona}, persona),
       avatar = COALESCE(${profile.avatar}, avatar),
-      country = COALESCE(${profile.country}, country),
-      cis_opt_in = IF(${opted}, 1, cis_opt_in)
+      country = COALESCE(${profile.country}, country)
     WHERE steam_id = ${steamId}
   `;
 }
 
 async function upsertUser(steamId: string) {
   await sql`
-    INSERT INTO users (steam_id, persona, avatar, country, cis_opt_in, last_login_at)
-    VALUES (${steamId}, null, null, null, 0, now())
+    INSERT INTO users (steam_id, persona, avatar, country, cis_opt_in, hide_leaderboard, last_login_at)
+    VALUES (${steamId}, null, null, null, 1, 0, now())
     ON DUPLICATE KEY UPDATE last_login_at = NOW()
   `;
   await sql`
@@ -561,11 +559,20 @@ app.patch("/api/me", async (request, reply) => {
   if (!steamId) return reply.code(401).send({ error: "steam" });
   const body = asObject(request.body);
   if (!body) return reply.code(400).send({ error: "bad_request" });
-  if (typeof body.cisOptIn === "boolean") {
-    await sql`UPDATE users SET cis_opt_in = ${body.cisOptIn} WHERE steam_id = ${steamId}`;
-  }
-  if (typeof body.hideLeaderboard === "boolean") {
-    await sql`UPDATE users SET hide_leaderboard = ${body.hideLeaderboard} WHERE steam_id = ${steamId}`;
+  // Один смысл: showInTop=true → в рейтинге; false → скрыт. cis_opt_in держим 1, пока сам не вышел.
+  if (typeof body.showInTop === "boolean") {
+    if (body.showInTop) {
+      await sql`UPDATE users SET cis_opt_in = 1, hide_leaderboard = 0 WHERE steam_id = ${steamId}`;
+    } else {
+      await sql`UPDATE users SET hide_leaderboard = 1 WHERE steam_id = ${steamId}`;
+    }
+  } else {
+    if (typeof body.cisOptIn === "boolean") {
+      await sql`UPDATE users SET cis_opt_in = ${body.cisOptIn} WHERE steam_id = ${steamId}`;
+    }
+    if (typeof body.hideLeaderboard === "boolean") {
+      await sql`UPDATE users SET hide_leaderboard = ${body.hideLeaderboard} WHERE steam_id = ${steamId}`;
+    }
   }
   return { ok: true };
 });
@@ -1245,7 +1252,7 @@ app.get("/api/admin/overview", async (request, reply) => {
     SELECT steam_id, persona, country, cis_opt_in, hide_leaderboard, last_login_at
     FROM users
     ORDER BY last_login_at IS NULL, last_login_at DESC
-    LIMIT 30
+    LIMIT 100
   `;
   const squads = await sql`
     SELECT sq.id, sq.name, sq.tag, sq.closed, sq.status,
@@ -1311,7 +1318,12 @@ app.post("/api/admin/players/:steamId/hide", async (request, reply) => {
   const steamId = (request.params as { steamId: string }).steamId;
   const hide = asObject(request.body)?.hide === true;
   if (!/^\d{17}$/.test(steamId)) return notFound(reply);
-  await sql`UPDATE users SET hide_leaderboard = ${hide} WHERE steam_id = ${steamId}`;
+  // Скрыть = только hide_leaderboard; вернуть в топ — ещё cis_opt_in=1.
+  if (hide) {
+    await sql`UPDATE users SET hide_leaderboard = 1 WHERE steam_id = ${steamId}`;
+  } else {
+    await sql`UPDATE users SET hide_leaderboard = 0, cis_opt_in = 1 WHERE steam_id = ${steamId}`;
+  }
   return { ok: true };
 });
 
