@@ -81,18 +81,27 @@ function readCookie(header: string | undefined, name: string) {
 }
 
 const AUTH_COOKIE_AGE = 30 * 60;
-const pendingAuth = new Map<string, number>();
 
-function rememberAuth(state: string) {
-  const now = Date.now();
-  for (const [key, exp] of pendingAuth) if (exp < now) pendingAuth.delete(key);
-  pendingAuth.set(state, now + AUTH_COOKIE_AGE * 1000);
+function loginNext(next: string) {
+  const value = next.startsWith("/") && !next.startsWith("//") ? next : "/ratings";
+  return value === "/" ? "/ratings" : value;
 }
 
-function takeAuth(state: string) {
-  const exp = pendingAuth.get(state);
-  pendingAuth.delete(state);
-  return Boolean(exp && exp > Date.now());
+async function rememberAuth(state: string, next: string) {
+  await sql`
+    INSERT INTO auth_pending (state, next_path, expires_at)
+    VALUES (${state}, ${next}, DATE_ADD(NOW(), INTERVAL ${AUTH_COOKIE_AGE} SECOND))
+    ON DUPLICATE KEY UPDATE next_path = VALUES(next_path), expires_at = VALUES(expires_at)
+  `;
+}
+
+async function takeAuth(state: string) {
+  if (!state) return "";
+  const rows = await sql<{ next_path: string }[]>`
+    SELECT next_path FROM auth_pending WHERE state = ${state} AND expires_at > NOW()
+  `;
+  await sql`DELETE FROM auth_pending WHERE state = ${state} OR expires_at < NOW()`;
+  return rows[0]?.next_path ?? "";
 }
 
 function continueOffsite(reply: FastifyReply, url: string, cookies: string[]) {
@@ -399,39 +408,27 @@ app.get("/api/health", async () => {
 });
 
 app.get("/auth/steam", async (request, reply) => {
-  const next = text((request.query as Record<string, unknown>).next, 200);
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
-  const nextCookie = cookieString("wd_next", encodeURIComponent(safeNext), AUTH_COOKIE_AGE);
-  if (config.trackerClientId && config.trackerKey) {
-    const state = randomBytes(16).toString("hex");
-    rememberAuth(state);
-    const url = new URL("https://wardogstracker.gg/api/connect");
-    url.searchParams.set("client_id", config.trackerClientId);
-    url.searchParams.set("redirect_uri", `${config.siteOrigin}/auth/wardogs`);
-    url.searchParams.set("state", state);
-    return continueOffsite(reply, url.toString(), [
-      nextCookie,
-      cookieString("wd_wdt", state, AUTH_COOKIE_AGE),
-    ]);
-  }
+  const next = loginNext(text((request.query as Record<string, unknown>).next, 200));
+  const state = randomBytes(16).toString("hex");
+  await rememberAuth(state, next);
   return continueOffsite(
     reply,
     steamLoginUrl(`${config.siteOrigin}/auth/steam/callback`, config.siteOrigin),
-    [nextCookie],
+    [
+      cookieString("wd_next", encodeURIComponent(next), AUTH_COOKIE_AGE),
+      cookieString("wd_wdt", state, AUTH_COOKIE_AGE),
+    ],
   );
 });
 
 app.get("/auth/wardogs", async (request, reply) => {
   const query = request.query as Record<string, unknown>;
   const state = text(query.state, 80);
-  const cookieOk = Boolean(state) && state === readCookie(request.headers.cookie, "wd_wdt");
-  const issued = Boolean(state) && takeAuth(state);
-  if (!state || (!cookieOk && !issued)) {
-    return reply.redirect(`${config.siteOrigin}/ratings?sync=expired`);
-  }
-  const failure = text(query.error_code, 40) || text(query.error, 40);
-  if (failure) return reply.redirect(`${config.siteOrigin}/ratings?sync=${encodeURIComponent(failure)}`);
   const code = text(query.code, 200);
+  const pendingNext = await takeAuth(state);
+  const failure = text(query.error_code, 40) || text(query.error, 40);
+  if (failure && !code) return reply.redirect(`${config.siteOrigin}/ratings?sync=${encodeURIComponent(failure)}`);
+  if (!code) return reply.redirect(`${config.siteOrigin}/ratings?sync=expired`);
   type Traded = { steamId?: string; player?: { stats?: Parameters<typeof saveCareer>[1] } };
   let traded: Traded | null = null;
   try {
@@ -461,7 +458,7 @@ app.get("/auth/wardogs", async (request, reply) => {
     app.log.error(error);
   }
   if (!saved) pullPublicCareer(traded.steamId).catch((error) => app.log.error(error));
-  const where = nextPath(request.headers.cookie, "/ratings");
+  const where = loginNext(pendingNext || nextPath(request.headers.cookie, "/ratings"));
   return finishLogin(reply, traded.steamId, where, saved);
 });
 
@@ -474,14 +471,12 @@ app.get("/auth/steam/callback", async (request, reply) => {
     app.log.error(error);
     return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
   }
-  let saved = false;
-  try {
-    saved = await pullPublicCareer(steamId);
-  } catch (error) {
-    app.log.error(error);
-  }
-  const where = nextPath(request.headers.cookie, "/ratings");
-  return finishLogin(reply, steamId, saved ? where : `/p?id=${steamId}`, saved);
+  pullConnectCareer(steamId).then((ok) => {
+    if (!ok) return pullPublicCareer(steamId);
+  }).catch((error) => app.log.error(error));
+  const pendingNext = await takeAuth(readCookie(request.headers.cookie, "wd_wdt"));
+  const where = loginNext(pendingNext || nextPath(request.headers.cookie, "/ratings"));
+  return finishLogin(reply, steamId, where, true);
 });
 
 app.get("/auth/logout", async (_request, reply) => {

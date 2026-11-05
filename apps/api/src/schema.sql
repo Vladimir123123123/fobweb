@@ -111,6 +111,13 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS events_created ON events (created_at);
 
+CREATE TABLE IF NOT EXISTS auth_pending (
+  state varchar(80) PRIMARY KEY,
+  next_path varchar(200) NOT NULL DEFAULT '/ratings',
+  expires_at datetime(3) NOT NULL,
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS builds (
   id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
   steam_id varchar(20) NOT NULL,

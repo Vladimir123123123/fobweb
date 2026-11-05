@@ -26,7 +26,7 @@ export async function verifySteamLogin(query: Record<string, unknown>) {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: params,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(20_000),
     });
     const text = await response.text();
     if (!text.includes("is_valid:true")) return null;
