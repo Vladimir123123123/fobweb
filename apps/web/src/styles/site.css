@@ -379,9 +379,28 @@ button.offer .na { color: var(--muted); font-weight: 500; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 th { color: var(--muted); font-weight: 500; font-size: 12px; letter-spacing: 0.04em; }
+th .th-ico {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+th .th-ico-role,
+th .th-ico-gold { width: 20px; height: 20px; }
+th:has(.th-ico) { text-align: center; padding-left: 6px; padding-right: 6px; }
+table.ratings th:nth-child(n + 3),
+table.ratings td:nth-child(n + 3) { text-align: center; }
 tbody tr { transition: background 0.15s ease; }
 tbody tr:hover { background: rgba(47, 107, 255, 0.08); }
 .scroll { overflow-x: auto; border: 1px solid var(--line); }
+.stat .stat-ico {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
 .who { display: flex; gap: 12px; align-items: center; }
 .who img { width: 48px; height: 48px; object-fit: cover; }
 .note { font-size: 13px; color: var(--muted); }
