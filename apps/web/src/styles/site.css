@@ -387,10 +387,19 @@ th .th-ico {
   object-fit: contain;
 }
 th .th-ico-role,
-th .th-ico-gold { width: 20px; height: 20px; }
+th .th-ico-gold,
+th .th-ico-level { width: 20px; height: 20px; }
 th:has(.th-ico) { text-align: center; padding-left: 6px; padding-right: 6px; }
 table.ratings th:nth-child(n + 3),
 table.ratings td:nth-child(n + 3) { text-align: center; }
+table.ratings th:nth-child(4),
+table.ratings th:nth-child(5),
+table.ratings th:nth-child(6),
+table.ratings th:nth-child(8) {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 tbody tr { transition: background 0.15s ease; }
 tbody tr:hover { background: rgba(47, 107, 255, 0.08); }
 .scroll { overflow-x: auto; border: 1px solid var(--line); }
