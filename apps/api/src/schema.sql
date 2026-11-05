@@ -118,6 +118,18 @@ CREATE TABLE IF NOT EXISTS auth_pending (
   created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS auth_jobs (
+  ticket varchar(80) PRIMARY KEY,
+  oauth_code varchar(4000) NOT NULL DEFAULT '',
+  next_path varchar(200) NOT NULL DEFAULT '/ratings',
+  status varchar(20) NOT NULL,
+  fail varchar(40) NOT NULL DEFAULT '',
+  steam_id varchar(20) NOT NULL DEFAULT '',
+  flag varchar(40) NOT NULL DEFAULT '',
+  expires_at datetime(3) NOT NULL,
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS builds (
   id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
   steam_id varchar(20) NOT NULL,

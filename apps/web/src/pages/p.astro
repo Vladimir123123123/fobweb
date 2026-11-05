@@ -9,11 +9,24 @@ import Base from "../layouts/Base.astro";
   const params = new URLSearchParams(location.search);
   const id = params.get("id") ?? "";
   const sync = params.get("sync") ?? "";
-  if (sync === "wait") {
-    root.innerHTML = "<p>Steam принят. Tracker ещё отдаёт цифры — подожди на этой странице.</p>";
-    let done = false;
-    for (let i = 0; i < 60; i++) {
-      const data = await fetch("/api/auth/status").then((r) => r.json()).catch(() => null);
+  const job = params.get("job") ?? "";
+
+  function money(value: number | null) {
+    return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
+  }
+  function chart(points: Array<{ wardog_level: number | null }>) {
+    const values = points.map((point) => point.wardog_level ?? 0);
+    if (values.length < 2) return "";
+    const max = Math.max(...values, 1);
+    const step = 280 / (values.length - 1);
+    const d = values.map((value, index) => `${index === 0 ? "M" : "L"}${index * step},${80 - (value / max) * 70}`).join(" ");
+    return `<svg class="chart" viewBox="0 0 280 90"><path d="${d}" fill="none" stroke="#e6b34d" stroke-width="2"/></svg>`;
+  }
+
+  async function waitJob() {
+    root.innerHTML = "<p>Обновляем статистику через API. Не закрывай вкладку.</p>";
+    for (let i = 0; i < 45; i++) {
+      const data = await fetch(`/api/auth/status?job=${encodeURIComponent(job)}`).then((r) => r.json()).catch(() => null);
       if (!data || data.status === "pending") {
         await new Promise((ok) => setTimeout(ok, 2000));
         continue;
@@ -27,33 +40,23 @@ import Base from "../layouts/Base.astro";
       } else {
         url.searchParams.set("sync", data.sync || "expired");
       }
+      url.searchParams.delete("job");
       location.replace(url.pathname + url.search);
-      done = true;
-      break;
+      return;
     }
-    if (!done) location.replace("/ratings?sync=token_timeout");
-  } else {
-  function money(value: number | null) {
-    return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
+    location.replace(id ? `/p/?id=${id}&sync=token_timeout` : "/ratings?sync=token_timeout");
   }
-  function chart(points: Array<{ wardog_level: number | null }>) {
-    const values = points.map((point) => point.wardog_level ?? 0);
-    if (values.length < 2) return "";
-    const max = Math.max(...values, 1);
-    const step = 280 / (values.length - 1);
-    const d = values.map((value, index) => `${index === 0 ? "M" : "L"}${index * step},${80 - (value / max) * 70}`).join(" ");
-    return `<svg class="chart" viewBox="0 0 280 90"><path d="${d}" fill="none" stroke="#e6b34d" stroke-width="2"/></svg>`;
-  }
-  if (!/^\d{17}$/.test(id)) {
-    // После OAuth иногда попадаем на /p/ без id — открываем свой профиль.
+
+  if (sync === "wait") {
+    await waitJob();
+  } else if (!/^\d{17}$/.test(id)) {
     try {
       const me = await fetch("/api/me").then((r) => r.json());
       const mine = me?.user?.steam_id;
       if (/^\d{17}$/.test(mine || "")) {
-        const q = sync ? `&sync=${encodeURIComponent(sync)}` : "";
-        location.replace(`/p/?id=${mine}${q}`);
+        location.replace(`/p/?id=${mine}`);
       } else {
-        root.innerHTML = `<h1>Такой страницы нет</h1><p><a class="btn" href="/auth/wardogs/start?next=/ratings">Войти + карьера</a></p>`;
+        root.innerHTML = `<h1>Такой страницы нет</h1><p><a class="btn" href="/auth/steam?next=/ratings">Войти через Steam</a></p>`;
       }
     } catch {
       root.innerHTML = "<h1>Такой страницы нет</h1>";
@@ -71,23 +74,19 @@ import Base from "../layouts/Base.astro";
       const mine = me.user?.steam_id === id;
       const empty = !profile.history.length;
       const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
-      const syncNote = sync === "wait"
-        ? "Steam принят. Tracker ещё отдаёт цифры — подожди на этой странице."
-        : sync === "game_running"
-        ? "WARDOGS была открыта — Tracker не отдал цифры. Полностью закрой игру и снова нажми «Подтянуть карьеру»."
-        : sync === "token_timeout" || sync === "token_err"
-          ? "Tracker долго отдавал ответ при входе. Полностью закрой WARDOGS и снова нажми «Подтянуть карьеру»."
-          : sync.startsWith("token_")
-            ? "Вход в Tracker не завершился. Закрой игру и нажми «Подтянуть карьеру» ещё раз."
-            : sync === "empty" || empty
-              ? "Цифр ещё нет. Закрой WARDOGS → «Подтянуть карьеру» → Steam. Обычный вход через Steam цифры не даёт."
-              : sync === "access_denied"
-                ? "Вход отменён."
-                : sync === "expired"
-                  ? "Сессия входа истекла. Нажми «Подтянуть карьеру» снова."
-                  : sync
-                    ? `Не вышло (${sync}). Закрой игру и повтори «Подтянуть карьеру».`
-                    : "";
+      const syncNote = sync === "game_running"
+        ? "WARDOGS была открыта — цифры не пришли. Закрой игру и нажми «Обновить статистику»."
+        : sync === "empty" || empty
+          ? "Цифр ещё нет. Закрой WARDOGS и нажми «Обновить статистику»."
+          : sync === "token_timeout" || sync === "token_err" || (sync && sync.startsWith("token_"))
+            ? "Tracker не ответил. Закрой игру и нажми «Обновить статистику» ещё раз."
+            : sync === "access_denied"
+              ? "Вход отменён."
+              : sync === "expired"
+                ? "Сессия входа истекла. Войди через Steam и обнови статистику."
+                : sync
+                  ? `Не вышло (${sync}). Закрой игру и нажми «Обновить статистику».`
+                  : "";
       root.innerHTML = `
         <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
         <p>Steam ${user.steam_id}${user.country ? ` · ${user.country}` : ""}${user.discord_name ? ` · Discord ${user.discord_name}` : ""}</p>
@@ -110,13 +109,11 @@ import Base from "../layouts/Base.astro";
         <p class="note">Снимков: ${profile.history.length}.</p>
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
-          ${empty
-            ? `<a class="btn small" href="/auth/wardogs/start?next=/p&steamId=${id}">Подтянуть карьеру</a>`
-            : `<button class="btn small" id="resync" type="button">Обновить цифры</button>`}
+          <button class="btn small" id="resync" type="button">Обновить статистику</button>
           <label><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
           ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : ""}
         </div>
-        <p class="note">Цифры даёт WARDOGS Tracker: закрой игру → «Подтянуть карьеру» → Steam. Обычный «Войти через Steam» цифры не приносит.</p>` : ""}
+        <p class="note">Вход на сайт — через Steam. Цифры подтягивает кнопка выше (игра должна быть закрыта).</p>` : ""}
       `;
       const save = async () => {
         const show = (document.querySelector("#show-top") as HTMLInputElement).checked;
@@ -129,21 +126,22 @@ import Base from "../layouts/Base.astro";
       document.querySelector("#show-top")?.addEventListener("change", save);
       document.querySelector("#resync")?.addEventListener("click", async () => {
         const note = document.querySelector("#sync-note")!;
-        const next = `/p?id=${id}`;
-        note.textContent = "Обновляю…";
+        const button = document.querySelector<HTMLButtonElement>("#resync")!;
+        button.disabled = true;
+        note.textContent = "Обновляю статистику…";
         const response = await fetch("/api/me/sync", { method: "POST" });
         if (response.status === 401) {
-          location.href = `/auth/steam?next=${encodeURIComponent(next)}`;
+          location.href = `/auth/steam?next=${encodeURIComponent(`/p/?id=${id}`)}`;
           return;
         }
         const body = await response.json().catch(() => ({}));
         if (body.saved) {
-          location.href = next;
+          location.href = `/p/?id=${id}`;
           return;
         }
-        location.href = `/auth/wardogs/start?next=/p&steamId=${id}`;
+        button.disabled = false;
+        note.textContent = "Цифры не пришли. Полностью закрой WARDOGS и нажми ещё раз.";
       });
     }
-  }
   }
 </script>

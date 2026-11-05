@@ -83,20 +83,53 @@ function readCookie(header: string | undefined, name: string) {
 const AUTH_COOKIE_AGE = 30 * 60;
 
 type LoginJob = {
+  ticket: string;
+  code: string;
   where: string;
   status: "pending" | "ok" | "fail";
-  fail?: string;
-  steamId?: string;
-  flag?: string;
-  at: number;
+  fail: string;
+  steamId: string;
+  flag: string;
 };
-const loginJobs = new Map<string, LoginJob>();
+const loginBusy = new Set<string>();
 
-function pruneLoginJobs() {
-  const old = Date.now() - 10 * 60_000;
-  for (const [ticket, job] of loginJobs) {
-    if (job.at < old) loginJobs.delete(ticket);
-  }
+async function readLoginJob(ticket: string): Promise<LoginJob | null> {
+  if (!ticket) return null;
+  const rows = await sql<{
+    oauth_code: string;
+    next_path: string;
+    status: string;
+    fail: string;
+    steam_id: string;
+    flag: string;
+  }[]>`
+    SELECT oauth_code, next_path, status, fail, steam_id, flag
+    FROM auth_jobs WHERE ticket = ${ticket} AND expires_at > NOW()
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ticket,
+    code: row.oauth_code,
+    where: row.next_path,
+    status: row.status === "ok" || row.status === "fail" ? row.status : "pending",
+    fail: row.fail,
+    steamId: row.steam_id,
+    flag: row.flag,
+  };
+}
+
+async function writeLoginJob(job: LoginJob) {
+  await sql`
+    INSERT INTO auth_jobs (ticket, oauth_code, next_path, status, fail, steam_id, flag, expires_at)
+    VALUES (
+      ${job.ticket}, ${job.code}, ${job.where}, ${job.status}, ${job.fail}, ${job.steamId}, ${job.flag},
+      DATE_ADD(NOW(), INTERVAL ${AUTH_COOKIE_AGE} SECOND)
+    )
+    ON DUPLICATE KEY UPDATE
+      status = VALUES(status), fail = VALUES(fail), steam_id = VALUES(steam_id),
+      flag = VALUES(flag), oauth_code = VALUES(oauth_code)
+  `;
 }
 
 function loginNext(next: string) {
@@ -212,7 +245,7 @@ async function pullPublicCareer(steamId: string) {
   try {
     const response = await fetch(`https://wardogstracker.gg/api/v1/players/${steamId}`, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) return false;
     const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
@@ -326,7 +359,7 @@ async function pullConnectCareer(steamId: string) {
   try {
     const response = await fetch(`https://wardogstracker.gg/api/v1/connect/players/${steamId}`, {
       headers: { authorization: `Bearer ${config.trackerKey}` },
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) return false;
     const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
@@ -502,41 +535,50 @@ async function tradeWardogsCode(code: string): Promise<{ fail: string; traded: T
   }
 }
 
-async function finishWardogsJob(ticket: string, code: string) {
-  const job = loginJobs.get(ticket);
-  if (!job || job.status !== "pending") return;
-  const { fail, traded } = await tradeWardogsCode(code);
-  const steamId = traded?.steamId || traded?.player?.steamId || "";
-  if (!steamId || !/^\d{17}$/.test(steamId)) {
-    job.status = "fail";
-    job.fail = fail || "token_err";
-    return;
-  }
-  const careerStats = traded?.player?.stats ?? null;
+async function finishWardogsJob(ticket: string) {
+  if (loginBusy.has(ticket)) return;
+  const job = await readLoginJob(ticket);
+  if (!job || job.status !== "pending" || !job.code) return;
+  loginBusy.add(ticket);
   try {
-    await upsertUser(steamId);
-  } catch (error) {
-    app.log.error(error);
-    job.status = "fail";
-    job.fail = "retry";
-    return;
+    const { fail, traded } = await tradeWardogsCode(job.code);
+    const steamId = traded?.steamId || traded?.player?.steamId || "";
+    if (!steamId || !/^\d{17}$/.test(steamId)) {
+      await writeLoginJob({ ...job, code: "", status: "fail", fail: fail || "token_err" });
+      return;
+    }
+    try {
+      await upsertUser(steamId);
+    } catch (error) {
+      app.log.error(error);
+      await writeLoginJob({ ...job, code: "", steamId, status: "fail", fail: "retry" });
+      return;
+    }
+    const careerStats = traded?.player?.stats ?? null;
+    let saved = false;
+    try {
+      saved = await saveCareer(steamId, careerStats, "login", true);
+    } catch (error) {
+      app.log.error(error);
+    }
+    if (!saved) saved = await pullPublicCareer(steamId);
+    await writeLoginJob({
+      ...job,
+      code: "",
+      steamId,
+      where: `/p/?id=${steamId}`,
+      status: "ok",
+      fail: "",
+      flag: saved ? "" : careerStats == null ? "game_running" : "empty",
+    });
+  } finally {
+    loginBusy.delete(ticket);
   }
-  let saved = false;
-  try {
-    saved = await saveCareer(steamId, careerStats, "login", true);
-  } catch (error) {
-    app.log.error(error);
-  }
-  if (!saved) saved = await pullPublicCareer(steamId);
-  job.steamId = steamId;
-  job.flag = saved ? "" : careerStats == null ? "game_running" : "empty";
-  job.status = "ok";
 }
 
 app.get("/auth/wardogs", async (request, reply) => {
   const query = request.query as Record<string, unknown>;
   const state = text(query.state, 120);
-  // Код от Tracker бывает длиннее 200 — раньше обрезали и обмен всегда ломался.
   const code = text(query.code, 4000);
   const pendingNext = await takeAuth(state) || nextPath(request.headers.cookie, "/ratings");
   const where = loginNext(pendingNext);
@@ -549,16 +591,13 @@ app.get("/auth/wardogs", async (request, reply) => {
     app.log.error("TRACKER_KEY empty on wardogs callback");
     return reply.redirect(`${config.siteOrigin}${where}?sync=token_cfg`);
   }
-  pruneLoginJobs();
   const ticket = randomBytes(16).toString("hex");
-  loginJobs.set(ticket, { where, status: "pending", at: Date.now() });
-  // Nginx/Plesk рвёт запрос ~60 с (504). Tracker часто дольше — обмен в фоне, сюда сразу 302.
-  void finishWardogsJob(ticket, code).catch((error) => {
+  await writeLoginJob({ ticket, code, where, status: "pending", fail: "", steamId: "", flag: "" });
+  void finishWardogsJob(ticket).catch(async (error) => {
     app.log.error(error);
-    const job = loginJobs.get(ticket);
+    const job = await readLoginJob(ticket);
     if (job && job.status === "pending") {
-      job.status = "fail";
-      job.fail = "token_err";
+      await writeLoginJob({ ...job, code: "", status: "fail", fail: "token_err" });
     }
   });
   writeCookies(reply, [
@@ -568,30 +607,24 @@ app.get("/auth/wardogs", async (request, reply) => {
   ]);
   const back = new URL(where, config.siteOrigin);
   back.searchParams.set("sync", "wait");
+  back.searchParams.set("job", ticket);
   return reply.redirect(back.toString());
 });
 
 app.get("/api/auth/status", async (request, reply) => {
-  pruneLoginJobs();
-  const ticket = readCookie(request.headers.cookie, "wd_login");
-  const job = ticket ? loginJobs.get(ticket) : null;
+  const query = request.query as Record<string, unknown>;
+  const ticket = text(query.job, 80) || readCookie(request.headers.cookie, "wd_login");
+  const job = await readLoginJob(ticket);
   if (!job) return { status: "missing" };
-  if (job.status === "pending") return { status: "pending" };
-  if (job.status === "ok" && job.steamId) {
-    writeCookies(reply, [
-      cookieString("wd_session", createSession(job.steamId), 14 * 24 * 3600),
-      cookieString("wd_login", "", 0),
-      cookieString("wd_next", "", 0),
-      cookieString("wd_wdt", "", 0),
-    ]);
-    loginJobs.delete(ticket);
-    return { status: "ok", steamId: job.steamId, flag: job.flag || "", next: job.where };
+  if (job.status === "pending") {
+    void finishWardogsJob(ticket).catch((error) => app.log.error(error));
+    return { status: "pending" };
   }
   writeCookies(reply, [cookieString("wd_login", "", 0)]);
-  const fail = job.fail || "token_err";
-  const next = job.where;
-  loginJobs.delete(ticket);
-  return { status: "fail", sync: fail, next };
+  if (job.status === "ok" && job.steamId) {
+    return { status: "ok", steamId: job.steamId, flag: job.flag || "", next: `/p/?id=${job.steamId}` };
+  }
+  return { status: "fail", sync: job.fail || "token_err", next: job.where };
 });
 
 app.get("/auth/steam/callback", async (request, reply) => {
@@ -603,9 +636,7 @@ app.get("/auth/steam/callback", async (request, reply) => {
     app.log.error(error);
     return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
   }
-  pullConnectCareer(steamId).then((ok) => {
-    if (!ok) return pullPublicCareer(steamId);
-  }).catch((error) => app.log.error(error));
+  ensureCareer(steamId).catch((error) => app.log.error(error));
   const pendingNext = await takeAuth(readCookie(request.headers.cookie, "wd_wdt"));
   const where = loginNext(pendingNext || nextPath(request.headers.cookie, "/ratings"));
   return finishLogin(reply, steamId, where, true);
@@ -685,15 +716,11 @@ app.post("/api/me/sync", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!steamId) return reply.code(401).send({ error: "steam" });
   // Сначала Connect (с ключом), потом публичный Tracker — как у бота.
-  const viaConnect = await pullConnectCareer(steamId);
-  const saved = viaConnect || (await pullPublicCareer(steamId));
+  const saved = await ensureCareer(steamId);
   return {
     ok: true,
     saved,
-    source: viaConnect ? "connect" : saved ? "tracker" : null,
-    // Без одноразового входа Connect API не отдаёт чужой профиль — нужна кнопка /auth/wardogs/start.
-    needConnect: !saved && Boolean(config.trackerKey && config.trackerClientId),
-    careerConnect: Boolean(config.trackerKey && config.trackerClientId),
+    source: saved ? "tracker" : null,
   };
 });
 
