@@ -19,6 +19,12 @@ if (!empty($_SERVER['CONTENT_TYPE'])) {
 if (!empty($_SERVER['HTTP_COOKIE'])) {
     $headers[] = 'Cookie: ' . $_SERVER['HTTP_COOKIE'];
 }
+// Секретные ключи бота / sync — иначе Node не увидит x-bot-key / x-sync-key.
+foreach (['HTTP_X_BOT_KEY' => 'x-bot-key', 'HTTP_X_SYNC_KEY' => 'x-sync-key', 'HTTP_ACCEPT' => 'Accept'] as $serverKey => $headerName) {
+    if (!empty($_SERVER[$serverKey])) {
+        $headers[] = $headerName . ': ' . $_SERVER[$serverKey];
+    }
+}
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST => $method,
@@ -26,7 +32,8 @@ curl_setopt_array($ch, [
     CURLOPT_HEADER => true,
     CURLOPT_HTTPHEADER => $headers,
     CURLOPT_POSTFIELDS => $method === 'GET' || $method === 'HEAD' ? null : $body,
-    CURLOPT_TIMEOUT => 25,
+    // bot/import тянет карьеру пачками — 25 с мало
+    CURLOPT_TIMEOUT => 180,
 ]);
 $raw = curl_exec($ch);
 if ($raw === false) {
