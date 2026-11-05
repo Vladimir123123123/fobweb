@@ -612,23 +612,28 @@ app.get("/api/ratings", async (request) => {
   const season = text(query.season, 20) || config.season;
   const q = text(query.q, 40).replace(/[%_]/g, "");
   if (!/^[a-z_]+$/.test(column)) return { season, sort, players: [] };
+  // Все, кто не скрыт: со снимком или без (цифры — когда появятся).
   const rows = await sql.unsafe(
-    `SELECT s.steam_id, s.season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
+    `SELECT u.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
             s.created_at, u.persona, u.avatar, u.country
-     FROM snapshots s
-     JOIN users u ON u.steam_id = s.steam_id
-     JOIN (
-       SELECT steam_id, MAX(created_at) AS created_at
-       FROM snapshots
-       WHERE season = ?
-       GROUP BY steam_id
-     ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
+     FROM users u
+     LEFT JOIN (
+       SELECT s.*
+       FROM snapshots s
+       JOIN (
+         SELECT steam_id, MAX(created_at) AS created_at
+         FROM snapshots
+         WHERE season = ?
+         GROUP BY steam_id
+       ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
+       WHERE s.season = ?
+     ) s ON s.steam_id = u.steam_id
      WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
-       AND (? = '' OR u.persona LIKE ?)
-     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC
-     LIMIT 100`,
-    [season, q, `%${q}%`],
+       AND (? = '' OR u.persona LIKE ? OR u.steam_id LIKE ?)
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, u.persona ASC
+     LIMIT 200`,
+    [season, season, season, q, `%${q}%`, `%${q}%`],
   );
   return { season, sort, players: rows };
 });
@@ -670,7 +675,8 @@ app.post("/api/bot/link", async (request, reply) => {
     return reply.code(400).send({ error: "bad_request" });
   }
   await upsertBotUser(steamId, discordId, discordName);
-  const pulled = await ensureCareer(steamId);
+  const wantPull = body?.pull !== false;
+  const pulled = wantPull ? await ensureCareer(steamId) : false;
   const joinedFob = await joinFobSquad(steamId);
   const payload = await botPlayerPayload(steamId);
   return { ok: true, pulled, joinedFob, ...payload };
@@ -705,29 +711,33 @@ app.get("/api/bot/board", async (request, reply) => {
   const fobOnly = text(query.fob, 8) === "1" || text(query.fob, 8).toLowerCase() === "true";
   if (!/^[a-z_]+$/.test(column)) return { season, sort, players: [] };
   const rows = await sql.unsafe(
-    `SELECT s.steam_id, s.season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
+    `SELECT u.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
             s.created_at, u.persona, u.avatar, u.country, u.discord_id, u.discord_name
-     FROM snapshots s
-     JOIN users u ON u.steam_id = s.steam_id
-     JOIN (
-       SELECT steam_id, MAX(created_at) AS created_at
-       FROM snapshots
-       WHERE season = ?
-       GROUP BY steam_id
-     ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
+     FROM users u
+     LEFT JOIN (
+       SELECT s.*
+       FROM snapshots s
+       JOIN (
+         SELECT steam_id, MAX(created_at) AS created_at
+         FROM snapshots
+         WHERE season = ?
+         GROUP BY steam_id
+       ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
+       WHERE s.season = ?
+     ) s ON s.steam_id = u.steam_id
      WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
        AND (
          ? = 0 OR EXISTS (
            SELECT 1 FROM squad_members m
            JOIN squads sq ON sq.id = m.squad_id
-           WHERE m.steam_id = s.steam_id AND m.status = 'member'
+           WHERE m.steam_id = u.steam_id AND m.status = 'member'
              AND sq.status = 'approved' AND UPPER(sq.tag) = 'FOB'
          )
        )
-     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, u.persona ASC
      LIMIT 200`,
-    [season, fobOnly ? 1 : 0],
+    [season, season, season, fobOnly ? 1 : 0],
   );
   return {
     season,
@@ -745,6 +755,7 @@ app.post("/api/bot/import", async (request, reply) => {
   const body = asObject(request.body);
   const players = Array.isArray(body?.players) ? body.players : [];
   if (!players.length || players.length > 500) return reply.code(400).send({ error: "bad_request" });
+  const wantPull = body?.pull !== false;
   const results: Array<{ steamId: string; ok: boolean; pulled: boolean; primaryClass: string | null }> = [];
   for (const item of players) {
     const row = asObject(item);
@@ -756,7 +767,7 @@ app.post("/api/bot/import", async (request, reply) => {
       continue;
     }
     await upsertBotUser(steamId, discordId, discordName);
-    const pulled = await ensureCareer(steamId);
+    const pulled = wantPull ? await ensureCareer(steamId) : false;
     await joinFobSquad(steamId);
     const payload = await botPlayerPayload(steamId);
     results.push({ steamId, ok: true, pulled, primaryClass: payload?.primaryClass ?? null });
