@@ -36,13 +36,13 @@ import Base from "../layouts/Base.astro";
       const empty = !profile.history.length;
       const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
       const syncNote = sync === "game_running"
-        ? "Закрой WARDOGS и войди ещё раз: пока игра открыта, цифры не отдаются."
+        ? "Закрой WARDOGS и нажми «Подтянуть карьеру» ещё раз — пока игра открыта, цифры не отдаются."
         : sync === "empty" || empty
-          ? "Steam не отдаёт уровень и роли. Цифры появятся после входа, когда игра отдаст снимок карьеры."
+          ? "Цифр ещё нет. Нужен вход через WARDOGS Tracker: закрой игру и нажми «Подтянуть карьеру»."
           : sync === "access_denied"
             ? "Вход отменён."
             : sync
-              ? "Игра не отдала цифры. Закрой её и войди ещё раз."
+              ? "Игра не отдала цифры. Закрой WARDOGS и нажми «Подтянуть карьеру» снова."
               : "";
       root.innerHTML = `
         <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
@@ -66,10 +66,11 @@ import Base from "../layouts/Base.astro";
         <p class="note">Снимков: ${profile.history.length}.</p>
         <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
         ${mine ? `<div class="row">
-          <button class="btn small" id="resync" type="button">Обновить цифры</button>
+          <button class="btn small" id="resync" type="button">${empty ? "Подтянуть карьеру" : "Обновить цифры"}</button>
           <label><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
-          ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : `<span class="note">Привязка Discord на сервере выключена. На вход она не влияет.</span>`}
-        </div>` : ""}
+          ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : ""}
+        </div>
+        <p class="note">Для цифр нужна авторизация WARDOGS Tracker (не обычный Steam). Игра должна быть закрыта.</p>` : ""}
       `;
       const save = async () => {
         const show = (document.querySelector("#show-top") as HTMLInputElement).checked;
@@ -82,20 +83,24 @@ import Base from "../layouts/Base.astro";
       document.querySelector("#show-top")?.addEventListener("change", save);
       document.querySelector("#resync")?.addEventListener("click", async () => {
         const note = document.querySelector("#sync-note")!;
+        const next = `/p?id=${id}`;
         note.textContent = "Обновляю…";
         const response = await fetch("/api/me/sync", { method: "POST" });
         if (response.status === 401) {
-          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          location.href = `/auth/steam?next=${encodeURIComponent(next)}`;
           return;
         }
         const body = await response.json().catch(() => ({}));
         if (body.saved) {
-          location.href = `/p?id=${id}`;
+          location.href = next;
           return;
         }
-        note.textContent = body.careerConnect
-          ? "Закрой WARDOGS и войди ещё раз — тогда игра отдаст снимок."
-          : "Steam не отдаёт эти цифры. Нужен вход, при котором игра сама отдаёт снимок карьеры.";
+        if (body.needConnect || body.careerConnect) {
+          note.textContent = "Нужен вход через WARDOGS Tracker. Закрой игру — сейчас открою окно входа…";
+          location.href = `/auth/wardogs/start?next=${encodeURIComponent(next)}`;
+          return;
+        }
+        note.textContent = "Цифры сейчас не отдаются. Закрой WARDOGS и попробуй снова.";
       });
     }
   }

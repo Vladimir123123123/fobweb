@@ -419,14 +419,33 @@ app.get("/auth/steam", async (request, reply) => {
   );
 });
 
+app.get("/auth/wardogs/start", async (request, reply) => {
+  if (!config.trackerKey || !config.trackerClientId) {
+    return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
+  }
+  const next = loginNext(text((request.query as Record<string, unknown>).next, 200));
+  const state = randomBytes(16).toString("hex");
+  await rememberAuth(state, next);
+  const url = new URL("https://wardogstracker.gg/api/connect");
+  url.searchParams.set("client_id", config.trackerClientId);
+  url.searchParams.set("redirect_uri", `${config.siteOrigin}/auth/wardogs`);
+  url.searchParams.set("state", state);
+  return continueOffsite(reply, url.toString(), [
+    cookieString("wd_next", encodeURIComponent(next), AUTH_COOKIE_AGE),
+    cookieString("wd_wdt", state, AUTH_COOKIE_AGE),
+  ]);
+});
+
 app.get("/auth/wardogs", async (request, reply) => {
   const query = request.query as Record<string, unknown>;
   const state = text(query.state, 80);
   const code = text(query.code, 200);
-  const pendingNext = await takeAuth(state);
+  const pendingNext = await takeAuth(state) || nextPath(request.headers.cookie, "/ratings");
   const failure = text(query.error_code, 40) || text(query.error, 40);
-  if (failure && !code) return reply.redirect(`${config.siteOrigin}/ratings?sync=${encodeURIComponent(failure)}`);
-  if (!code) return reply.redirect(`${config.siteOrigin}/ratings?sync=expired`);
+  if (failure && !code) {
+    return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=${encodeURIComponent(failure)}`);
+  }
+  if (!code) return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=expired`);
   type Traded = { steamId?: string; player?: { stats?: Parameters<typeof saveCareer>[1] } };
   let traded: Traded | null = null;
   try {
@@ -441,13 +460,13 @@ app.get("/auth/wardogs", async (request, reply) => {
     app.log.error(error);
   }
   if (!traded?.steamId || !/^\d{17}$/.test(traded.steamId)) {
-    return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
+    return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=retry`);
   }
   try {
     await upsertUser(traded.steamId);
   } catch (error) {
     app.log.error(error);
-    return reply.redirect(`${config.siteOrigin}/ratings?sync=retry`);
+    return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=retry`);
   }
   let saved = false;
   try {
@@ -456,7 +475,7 @@ app.get("/auth/wardogs", async (request, reply) => {
     app.log.error(error);
   }
   if (!saved) pullPublicCareer(traded.steamId).catch((error) => app.log.error(error));
-  const where = loginNext(pendingNext || nextPath(request.headers.cookie, "/ratings"));
+  const where = loginNext(pendingNext);
   return finishLogin(reply, traded.steamId, where, saved);
 });
 
@@ -550,8 +569,17 @@ app.get("/api/me", async (request) => {
 app.post("/api/me/sync", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!steamId) return reply.code(401).send({ error: "steam" });
-  const saved = await pullPublicCareer(steamId);
-  return { ok: true, saved, careerConnect: Boolean(config.trackerKey && config.trackerClientId) };
+  // Сначала Connect (с ключом), потом публичный Tracker — как у бота.
+  const viaConnect = await pullConnectCareer(steamId);
+  const saved = viaConnect || (await pullPublicCareer(steamId));
+  return {
+    ok: true,
+    saved,
+    source: viaConnect ? "connect" : saved ? "tracker" : null,
+    // Без одноразового входа Connect API не отдаёт чужой профиль — нужна кнопка /auth/wardogs/start.
+    needConnect: !saved && Boolean(config.trackerKey && config.trackerClientId),
+    careerConnect: Boolean(config.trackerKey && config.trackerClientId),
+  };
 });
 
 app.patch("/api/me", async (request, reply) => {
