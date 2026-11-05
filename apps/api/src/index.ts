@@ -95,20 +95,10 @@ function takeAuth(state: string) {
   return Boolean(exp && exp > Date.now());
 }
 
-function htmlEscape(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-function continueOffsite(reply: FastifyReply, url: string, cookies: string[], title: string) {
+function continueOffsite(reply: FastifyReply, url: string, cookies: string[]) {
   writeCookies(reply, cookies);
   reply.header("cache-control", "no-store");
-  const safe = htmlEscape(url);
-  return reply.type("text/html; charset=utf-8").send(
-    `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safe}"><title>${title}</title>`
-    + `<style>html,body{margin:0;background:#0b0d12;color:#c9d2e3;font:16px/1.4 sans-serif;display:grid;place-items:center;min-height:100vh}</style>`
-    + `<p>${title} <a href="${safe}">Продолжить</a></p>`
-    + `<script>location.replace(${JSON.stringify(url)})</script>`,
-  );
+  return reply.redirect(url);
 }
 
 function finishLogin(reply: FastifyReply, steamId: string, where: string, saved: boolean) {
@@ -422,13 +412,12 @@ app.get("/auth/steam", async (request, reply) => {
     return continueOffsite(reply, url.toString(), [
       nextCookie,
       cookieString("wd_wdt", state, AUTH_COOKIE_AGE),
-    ], "Открываем Steam…");
+    ]);
   }
   return continueOffsite(
     reply,
     steamLoginUrl(`${config.siteOrigin}/auth/steam/callback`, config.siteOrigin),
     [nextCookie],
-    "Открываем Steam…",
   );
 });
 
