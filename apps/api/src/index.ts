@@ -438,35 +438,43 @@ app.get("/auth/wardogs/start", async (request, reply) => {
 
 app.get("/auth/wardogs", async (request, reply) => {
   const query = request.query as Record<string, unknown>;
-  const state = text(query.state, 80);
-  const code = text(query.code, 200);
+  const state = text(query.state, 120);
+  // Код от Tracker бывает длиннее 200 — раньше обрезали и обмен всегда ломался.
+  const code = text(query.code, 4000);
   const pendingNext = await takeAuth(state) || nextPath(request.headers.cookie, "/ratings");
+  const where = loginNext(pendingNext);
   const failure = text(query.error_code, 40) || text(query.error, 40);
   if (failure && !code) {
-    return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=${encodeURIComponent(failure)}`);
+    return reply.redirect(`${config.siteOrigin}${where}?sync=${encodeURIComponent(failure)}`);
   }
-  if (!code) return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=expired`);
+  if (!code) return reply.redirect(`${config.siteOrigin}${where}?sync=expired`);
   type Traded = { steamId?: string; player?: { stats?: Parameters<typeof saveCareer>[1] } };
   let traded: Traded | null = null;
+  let tokenStatus = 0;
   try {
     const response = await fetch("https://wardogstracker.gg/api/v1/connect/token", {
       method: "POST",
       headers: { authorization: `Bearer ${config.trackerKey}`, "content-type": "application/json" },
       body: JSON.stringify({ code, redirect_uri: `${config.siteOrigin}/auth/wardogs` }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(15_000),
     });
+    tokenStatus = response.status;
     traded = response.ok ? await response.json() as Traded : null;
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      app.log.error({ tokenStatus, detail: detail.slice(0, 300) }, "wardogs token exchange failed");
+    }
   } catch (error) {
     app.log.error(error);
   }
   if (!traded?.steamId || !/^\d{17}$/.test(traded.steamId)) {
-    return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=retry`);
+    return reply.redirect(`${config.siteOrigin}${where}?sync=token_${tokenStatus || "err"}`);
   }
   try {
     await upsertUser(traded.steamId);
   } catch (error) {
     app.log.error(error);
-    return reply.redirect(`${config.siteOrigin}${loginNext(pendingNext)}?sync=retry`);
+    return reply.redirect(`${config.siteOrigin}${where}?sync=retry`);
   }
   let saved = false;
   try {
@@ -474,9 +482,19 @@ app.get("/auth/wardogs", async (request, reply) => {
   } catch (error) {
     app.log.error(error);
   }
-  if (!saved) pullPublicCareer(traded.steamId).catch((error) => app.log.error(error));
-  const where = loginNext(pendingNext);
-  return finishLogin(reply, traded.steamId, where, saved);
+  if (!saved) {
+    saved = await pullPublicCareer(traded.steamId);
+  }
+  // stats:null почти всегда = WARDOGS открыта во время входа
+  const flag = saved ? "" : traded.player?.stats == null ? "game_running" : "empty";
+  writeCookies(reply, [
+    cookieString("wd_session", createSession(traded.steamId), 14 * 24 * 3600),
+    cookieString("wd_next", "", 0),
+    cookieString("wd_wdt", "", 0),
+  ]);
+  const back = new URL(where, config.siteOrigin);
+  if (flag) back.searchParams.set("sync", flag);
+  return reply.redirect(back.toString());
 });
 
 app.get("/auth/steam/callback", async (request, reply) => {

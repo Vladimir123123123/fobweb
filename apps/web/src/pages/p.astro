@@ -36,13 +36,17 @@ import Base from "../layouts/Base.astro";
       const empty = !profile.history.length;
       const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
       const syncNote = sync === "game_running"
-        ? "Закрой WARDOGS и нажми «Подтянуть карьеру» ещё раз — пока игра открыта, цифры не отдаются."
-        : sync === "empty" || empty
-          ? "Цифр ещё нет. Нужен вход через WARDOGS Tracker: закрой игру и нажми «Подтянуть карьеру»."
+        ? "WARDOGS была открыта — Tracker не отдал цифры. Полностью закрой игру и снова нажми «Подтянуть карьеру»."
+        : sync.startsWith("token_")
+          ? "Вход в Tracker не завершился (код обмена). Закрой игру и нажми «Подтянуть карьеру» ещё раз."
+          : sync === "empty" || empty
+          ? "Цифр ещё нет. Закрой WARDOGS → «Подтянуть карьеру» → Steam. Обычный вход через Steam цифры не даёт."
           : sync === "access_denied"
             ? "Вход отменён."
+            : sync === "expired"
+              ? "Сессия входа истекла. Нажми «Подтянуть карьеру» снова."
             : sync
-              ? "Игра не отдала цифры. Закрой WARDOGS и нажми «Подтянуть карьеру» снова."
+              ? `Не вышло (${sync}). Закрой игру и повтори «Подтянуть карьеру».`
               : "";
       root.innerHTML = `
         <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>

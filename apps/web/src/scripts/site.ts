@@ -46,8 +46,10 @@ async function paintAccount() {
     if (!response.ok) throw new Error("api");
     const data = await response.json();
     const user = data.user;
+    const next = encodeURIComponent(location.pathname + location.search);
     if (!user) {
-      slot.innerHTML = `<a class="btn ghost small" href="/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}">Войти через Steam</a>`;
+      // Цифры карьеры — только через Tracker Connect; Steam-only аккаунт без снимка.
+      slot.innerHTML = `<a class="btn small" href="/auth/wardogs/start?next=${next}">Войти + карьера</a>`;
       return;
     }
     const name = user.persona || user.steam_id;
@@ -56,7 +58,7 @@ async function paintAccount() {
       location.href = "/auth/logout";
     });
   } catch {
-    slot.innerHTML = `<a class="btn ghost small" href="/auth/steam">Войти через Steam</a>`;
+    slot.innerHTML = `<a class="btn small" href="/auth/wardogs/start?next=/ratings">Войти + карьера</a>`;
   }
 }
 
