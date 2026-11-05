@@ -32,6 +32,8 @@ curl_setopt_array($ch, [
     CURLOPT_HEADER => true,
     CURLOPT_HTTPHEADER => $headers,
     CURLOPT_POSTFIELDS => $method === 'GET' || $method === 'HEAD' ? null : $body,
+    CURLOPT_NOBODY => $method === 'HEAD',
+    CURLOPT_CONNECTTIMEOUT => 5,
     // bot/import тянет карьеру пачками — 25 с мало
     CURLOPT_TIMEOUT => 180,
 ]);
@@ -49,6 +51,10 @@ $rawHeaders = substr($raw, 0, $headerSize);
 $payload = substr($raw, $headerSize);
 http_response_code($status);
 foreach (preg_split("/\r\n|\n|\r/", $rawHeaders) as $line) {
+    $line = trim($line);
+    if ($line === '') {
+        continue;
+    }
     if (stripos($line, 'Content-Type:') === 0 || stripos($line, 'Set-Cookie:') === 0 || stripos($line, 'Location:') === 0) {
         header($line, false);
     }
