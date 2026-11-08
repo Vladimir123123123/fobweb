@@ -294,9 +294,8 @@ async function pullPublicCareer(steamId: string) {
 async function refreshPublicCareers() {
   const due = await sql<{ steam_id: string }[]>`
     SELECT steam_id FROM users
-    WHERE last_login_at > DATE_SUB(NOW(), INTERVAL 14 DAY)
     ORDER BY last_login_at DESC
-    LIMIT 30
+    LIMIT 80
   `;
   for (const row of due) await pullPublicCareer(row.steam_id);
 }
@@ -392,24 +391,25 @@ async function pullConnectCareer(steamId: string) {
 }
 
 async function refreshCareer(steamId: string) {
-  const connect = config.trackerKey ? await trackerGet(`/api/v1/connect/players/${steamId}`, true) : { status: 0, json: null };
-  let json = connect.json;
-  let source = "connect";
+  // Сами забираем открытую копию карьеры. Живое чтение из клиента игры студия не отдаёт.
+  const pub = await trackerGet(`/api/v1/players/${steamId}`, false);
+  let json = pub.json;
+  let source = "tracker";
   let stats = playerStats(json);
-  if (!stats) {
-    const pub = await trackerGet(`/api/v1/players/${steamId}`, false);
-    json = pub.json;
-    source = "tracker";
+  if (!stats && config.trackerKey) {
+    const connect = await trackerGet(`/api/v1/connect/players/${steamId}`, true);
+    json = connect.json;
+    source = "connect";
     stats = playerStats(json);
-    if (!stats) {
-      return {
-        saved: false,
-        unchanged: false,
-        reason: pub.status === 0 ? "tracker_down" : "empty",
-        source: null as string | null,
-        syncedAt: "",
-      };
-    }
+  }
+  if (!stats) {
+    return {
+      saved: false,
+      unchanged: false,
+      reason: pub.status === 0 ? "tracker_down" : "empty",
+      source: null as string | null,
+      syncedAt: "",
+    };
   }
   const syncedAt = trackerSyncedAt(json);
   const latest = await latestSnapshot(steamId);

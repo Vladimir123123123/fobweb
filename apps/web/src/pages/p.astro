@@ -127,19 +127,15 @@ import Base from "../layouts/Base.astro";
       const picture = (value: unknown) => /^\/api\/media\/[a-f0-9]{32}\.(jpg|png|webp)$/.test(String(value ?? "")) ? String(value) : "";
       const banner = picture(squad?.banner);
       const logo = picture(squad?.logo);
-      const syncNote = sync === "game_running"
-        ? "WARDOGS была открыта — цифры не пришли. Закрой игру и нажми «Обновить через Steam»."
-        : sync === "empty" || empty
-          ? "Цифр ещё нет. Закрой WARDOGS и нажми «Обновить через Steam»."
-          : sync === "token_timeout" || sync === "token_err" || (sync && sync.startsWith("token_"))
-            ? "Tracker не ответил. Закрой игру и нажми «Обновить через Steam» ещё раз."
-            : sync === "access_denied"
-              ? "Вход отменён."
-              : sync === "expired"
-                ? "Сессия входа истекла. Войди через Steam и обнови статистику."
-                : sync
-                  ? `Не вышло (${sync}). Закрой игру и нажми «Обновить через Steam».`
-                  : "";
+      const syncNote = sync === "same"
+        ? "Это последние цифры из открытой базы. Свежее появятся, когда база снимет карьеру после сессии."
+        : empty
+          ? "Цифр ещё нет. Нажми «Обновить статистику» — мы сами заберём карьеру по SteamID."
+          : sync === "expired"
+            ? "Сессия входа истекла. Войди через Steam в шапке."
+            : sync && sync !== "ok"
+              ? "Не вышло обновить. Нажми «Обновить статистику» ещё раз."
+              : "";
       root.innerHTML = `
         <article class="dossier">
           <header class="dossier-hero${banner ? " has-banner" : ""}">
@@ -199,10 +195,9 @@ import Base from "../layouts/Base.astro";
           </section>
           ${mine ? `<div class="dossier-own">
             <button class="btn small" id="resync" type="button">Обновить статистику</button>
-            <a class="btn ghost small" href="/auth/wardogs/start?next=/p&steamId=${id}">Снять из игры</a>
             <label class="check"><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
             ${me.discordLink ? `<a class="btn ghost small" href="/auth/discord">Привязать Discord</a>` : ""}
-            <p class="note">«Обновить» берёт последние цифры Tracker. «Снять из игры» читает карьеру сейчас — WARDOGS должна быть закрыта.</p>
+            <p class="note">Мы сами забираем карьеру по SteamID из открытой базы. Вход на сайт — Steam в шапке.</p>
           </div>` : ""}
         </article>
       `;
@@ -232,23 +227,14 @@ import Base from "../layouts/Base.astro";
           reason?: string;
           syncedAt?: string;
         };
-        if (body.saved && !body.unchanged) {
-          location.href = `/p/?id=${id}`;
+        if (body.saved) {
+          location.href = body.unchanged ? `/p/?id=${id}&sync=same` : `/p/?id=${id}`;
           return;
         }
         button.disabled = false;
-        if (body.unchanged) {
-          const when = body.syncedAt
-            ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(body.syncedAt))
-            : "";
-          note.textContent = when
-            ? `Tracker всё ещё держит снимок с ${when}. Закрой WARDOGS и нажми «Снять из игры».`
-            : "Цифры те же. Закрой WARDOGS и нажми «Снять из игры».";
-          return;
-        }
         note.textContent = body.reason === "tracker_down"
-          ? "Сервер не достучался до Tracker. Нажми ещё раз через минуту."
-          : "Живых цифр нет. Закрой WARDOGS и нажми «Снять из игры».";
+          ? "Сейчас не достучались до базы карьеры. Нажми ещё раз через минуту."
+          : "В открытой базе этого игрока ещё нет. Сыграй сессию и обнови позже.";
       });
       document.querySelector("#copy-profile")?.addEventListener("click", async () => {
         const button = document.querySelector<HTMLButtonElement>("#copy-profile");
