@@ -541,6 +541,7 @@ app.get("/auth/wardogs/start", async (request, reply) => {
 
 type Traded = {
   steamId?: string;
+  synced?: boolean;
   errorCode?: string;
   player?: { steamId?: string; stats?: Parameters<typeof saveCareer>[1] };
 };
@@ -609,6 +610,7 @@ async function finishWardogsJob(ticket: string) {
       app.log.error(error);
     }
     if (!saved) saved = await pullPublicCareer(steamId);
+    const live = traded?.synced === true;
     await writeLoginJob({
       ...job,
       code: "",
@@ -616,7 +618,7 @@ async function finishWardogsJob(ticket: string) {
       where: `/p/?id=${steamId}`,
       status: "ok",
       fail: "",
-      flag: saved ? "" : careerStats == null ? "game_running" : "empty",
+      flag: !saved ? (careerStats == null ? "game_running" : "empty") : live ? "" : "stale",
     });
   } finally {
     loginBusy.delete(ticket);
@@ -667,10 +669,14 @@ app.get("/api/auth/status", async (request, reply) => {
     void finishWardogsJob(ticket).catch((error) => app.log.error(error));
     return { status: "pending" };
   }
-  writeCookies(reply, [cookieString("wd_login", "", 0)]);
   if (job.status === "ok" && job.steamId) {
+    writeCookies(reply, [
+      cookieString("wd_login", "", 0),
+      cookieString("wd_session", createSession(job.steamId), 14 * 24 * 3600),
+    ]);
     return { status: "ok", steamId: job.steamId, flag: job.flag || "", next: `/p/?id=${job.steamId}` };
   }
+  writeCookies(reply, [cookieString("wd_login", "", 0)]);
   return { status: "fail", sync: job.fail || "token_err", next: job.where };
 });
 

@@ -51,7 +51,7 @@ import Base from "../layouts/Base.astro";
   }
 
   async function waitJob() {
-    root.innerHTML = "<p>Обновляем статистику через API. Не закрывай вкладку.</p>";
+    root.innerHTML = "<p>Steam забирает карьеру из игры. WARDOGS должен быть закрыт. Не закрывай вкладку.</p>";
     for (let i = 0; i < 45; i++) {
       const data = await fetch(`/api/auth/status?job=${encodeURIComponent(job)}`).then((r) => r.json()).catch(() => null);
       if (!data || data.status === "pending") {
@@ -128,14 +128,20 @@ import Base from "../layouts/Base.astro";
       const banner = picture(squad?.banner);
       const logo = picture(squad?.logo);
       const syncNote = sync === "same"
-        ? "Это последние цифры из открытой базы. Свежее появятся, когда база снимет карьеру после сессии."
-        : empty
-          ? "Цифр ещё нет. Нажми «Обновить статистику» — мы сами заберём карьеру по SteamID."
-          : sync === "expired"
-            ? "Сессия входа истекла. Войди через Steam в шапке."
-            : sync && sync !== "ok"
-              ? "Не вышло обновить. Нажми «Обновить статистику» ещё раз."
-              : "";
+        ? "Цифры те же, что уже были. Свежее игра отдаст, если закрыть WARDOGS и снять ещё раз."
+        : sync === "game_running"
+          ? "Игра была запущена. Полностью закрой WARDOGS и нажми «Снять из игры»."
+          : sync === "stale"
+            ? "Игра не отдала свежий снимок. Записали последние известные цифры. Закрой клиент и сними ещё раз."
+          : sync === "access_denied"
+            ? "Steam отменён. Нажми «Снять из игры» и подтверди вход."
+          : empty
+            ? "Цифр ещё нет. Закрой WARDOGS и нажми «Снять из игры» — откроется Steam, мы запишем карьеру."
+            : sync === "expired"
+              ? "Код входа истёк. Нажми «Снять из игры» ещё раз."
+              : sync && sync !== "ok"
+                ? "Не вышло снять карьеру. Закрой игру и нажми ещё раз."
+                : "";
       root.innerHTML = `
         <article class="dossier">
           <header class="dossier-hero${banner ? " has-banner" : ""}">
@@ -194,10 +200,11 @@ import Base from "../layouts/Base.astro";
             </div>
           </section>
           ${mine ? `<div class="dossier-own">
-            <button class="btn small" id="resync" type="button">Обновить статистику</button>
+            <a class="btn small" href="/auth/wardogs/start?next=/p&steamId=${esc(id)}">Снять из игры</a>
+            <button class="btn ghost small" id="resync" type="button">Из открытой базы</button>
             <label class="check"><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
             ${me.discordLink ? `<a class="btn ghost small" href="/auth/discord">Привязать Discord</a>` : ""}
-            <p class="note">Мы сами забираем карьеру по SteamID из открытой базы. Вход на сайт — Steam в шапке.</p>
+            <p class="note">Закрой WARDOGS, нажми «Снять из игры», подтверди Steam — мы только запишем цифры. Вход на сайт в шапке отдельно.</p>
           </div>` : ""}
         </article>
       `;
