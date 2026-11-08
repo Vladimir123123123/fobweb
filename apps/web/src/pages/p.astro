@@ -11,16 +11,43 @@ import Base from "../layouts/Base.astro";
   const sync = params.get("sync") ?? "";
   const job = params.get("job") ?? "";
 
-  function money(value: number | null) {
+  const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  function money(value: number | null | undefined) {
     return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
   }
-  function chart(points: Array<{ wardog_level: number | null }>) {
+  const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
+  function when(value: unknown) {
+    const date = new Date(String(value ?? ""));
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" }).format(date);
+  }
+  function shift(now: number | null | undefined, prev: number | null | undefined) {
+    if (now == null || prev == null) return "";
+    const diff = Number(now) - Number(prev);
+    if (!diff) return "";
+    const sign = diff > 0 ? "+" : "−";
+    return `<em class="${diff > 0 ? "up" : "down"}">${sign}${new Intl.NumberFormat("ru-RU").format(Math.abs(diff))}</em>`;
+  }
+  function chart(points: Array<{ wardog_level: number | null; created_at?: string }>) {
     const values = points.map((point) => point.wardog_level ?? 0);
-    if (values.length < 2) return "";
+    if (values.length < 2) return `<p class="note">Один снимок. Линия появится после следующего обновления.</p>`;
     const max = Math.max(...values, 1);
-    const step = 280 / (values.length - 1);
-    const d = values.map((value, index) => `${index === 0 ? "M" : "L"}${index * step},${80 - (value / max) * 70}`).join(" ");
-    return `<svg class="chart" viewBox="0 0 280 90"><path d="${d}" fill="none" stroke="#e6b34d" stroke-width="2"/></svg>`;
+    const min = Math.min(...values);
+    const span = Math.max(max - min, 1);
+    const width = 640;
+    const height = 160;
+    const step = width / (values.length - 1);
+    const y = (value: number) => 16 + (1 - (value - min) / span) * (height - 36);
+    const line = values.map((value, index) => `${index === 0 ? "M" : "L"}${index * step},${y(value)}`).join(" ");
+    const area = `${line} L${width},${height} L0,${height} Z`;
+    const last = values.at(-1) ?? 0;
+    return `<svg class="dossier-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Уровень по снимкам">
+      <defs><linearGradient id="lvl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e4b04a" stop-opacity="0.45"/><stop offset="1" stop-color="#e4b04a" stop-opacity="0"/></linearGradient></defs>
+      <path d="${area}" fill="url(#lvl)"></path>
+      <path d="${line}" fill="none" stroke="#e4b04a" stroke-width="2.5"></path>
+      <circle cx="${width}" cy="${y(last)}" r="4" fill="#e4b04a"></circle>
+    </svg>
+    <p class="dossier-axis"><span>${esc(when(points[0]?.created_at))}</span><span>${esc(when(points.at(-1)?.created_at))} · ${num(last)} ур.</span></p>`;
   }
 
   async function waitJob() {
@@ -62,58 +89,121 @@ import Base from "../layouts/Base.astro";
       root.innerHTML = "<h1>Такой страницы нет</h1>";
     }
   } else {
-    const [profile, me] = await Promise.all([
+    const [profile, me, board] = await Promise.all([
       fetch(`/api/players/${id}`).then(async (response) => response.ok ? response.json() : null),
       fetch("/api/me").then((response) => response.json()).catch(() => ({ user: null })),
+      fetch("/api/ratings?sort=level").then(async (response) => response.ok ? response.json() : null).catch(() => null),
     ]);
     if (!profile) {
       root.innerHTML = "<h1>Профиль ещё не создан</h1><p>Игрок не входил через Steam на этом сайте.</p>";
     } else {
       const user = profile.user;
-      const latest = profile.history.at(-1);
+      const history = profile.history as Array<Record<string, number | string | null>>;
+      const latest = history.at(-1);
+      const previous = history.length > 1 ? history.at(-2) : undefined;
       const mine = me.user?.steam_id === id;
-      const empty = !profile.history.length;
-      const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
+      const empty = !history.length;
+      const roles = [
+        ["role_assault", "Штурм", "/art/t_ui_icon_role_infantry.webp"],
+        ["role_medic", "Медик", "/art/t_ui_icon_role_medic.webp"],
+        ["role_recon", "Разведка", "/art/t_ui_icon_role_recon.webp"],
+        ["role_support", "Поддержка", "/art/t_ui_icon_role_support.webp"],
+        ["role_driver", "Водитель", "/art/t_ui_icon_role_driver.webp"],
+        ["role_pilot", "Пилот", "/art/t_ui_icon_role_pilot.webp"],
+      ] as const;
+      const levels = roles.map(([key, name, icon]) => ({ key, name, icon, level: Number(latest?.[key] ?? 0) || 0 }));
+      const peak = Math.max(...levels.map((role) => role.level), 1);
+      const primary = levels.reduce((best, role) => role.level > best.level ? role : best, levels[0]);
+      const listed = (board?.players ?? []) as Array<{ steam_id?: string }>;
+      const placeIndex = listed.findIndex((row) => String(row.steam_id) === id);
+      const hidden = Boolean(user.hide_leaderboard) || !user.cis_opt_in;
+      const place = placeIndex >= 0 ? `место #${placeIndex + 1}` : hidden ? "скрыт из топа" : "вне топ-200";
+      let squad = profile.squad as { id: number; name: string; tag: string; role?: string; logo?: string; banner?: string } | null;
+      if (squad?.id && !("banner" in (profile.squad as object))) {
+        const card = await fetch(`/api/squads/${squad.id}`).then((response) => response.ok ? response.json() : null).catch(() => null);
+        const art = card?.squad as { logo?: string; banner?: string } | undefined;
+        if (art) squad = { ...squad, logo: art.logo ?? "", banner: art.banner ?? "" };
+      }
+      const picture = (value: unknown) => /^\/api\/media\/[a-f0-9]{32}\.(jpg|png|webp)$/.test(String(value ?? "")) ? String(value) : "";
+      const banner = picture(squad?.banner);
+      const logo = picture(squad?.logo);
       const syncNote = sync === "game_running"
-        ? "WARDOGS была открыта — цифры не пришли. Закрой игру и нажми «Обновить статистику»."
+        ? "WARDOGS была открыта — цифры не пришли. Закрой игру и нажми «Обновить через Steam»."
         : sync === "empty" || empty
-          ? "Цифр ещё нет. Закрой WARDOGS и нажми «Обновить статистику»."
+          ? "Цифр ещё нет. Закрой WARDOGS и нажми «Обновить через Steam»."
           : sync === "token_timeout" || sync === "token_err" || (sync && sync.startsWith("token_"))
-            ? "Tracker не ответил. Закрой игру и нажми «Обновить статистику» ещё раз."
+            ? "Tracker не ответил. Закрой игру и нажми «Обновить через Steam» ещё раз."
             : sync === "access_denied"
               ? "Вход отменён."
               : sync === "expired"
                 ? "Сессия входа истекла. Войди через Steam и обнови статистику."
                 : sync
-                  ? `Не вышло (${sync}). Закрой игру и нажми «Обновить статистику».`
+                  ? `Не вышло (${sync}). Закрой игру и нажми «Обновить через Steam».`
                   : "";
       root.innerHTML = `
-        <div class="who"><img alt="" src="${user.avatar ?? ""}" /><h1>${user.persona ?? user.steam_id}</h1></div>
-        <p>Steam ${user.steam_id}${user.country ? ` · ${user.country}` : ""}${user.discord_name ? ` · Discord ${user.discord_name}` : ""}</p>
-        ${syncNote ? `<p class="note" id="sync-note">${syncNote}</p>` : `<p class="note" id="sync-note"></p>`}
-        <div class="stats">
-          <div class="stat"><b>${latest?.wardog_level ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_careerlevel_600.webp" alt="" />Уровень</span></div>
-          <div class="stat"><b>${num(latest?.xp)}</b><span>Опыт</span></div>
-          <div class="stat"><b>${money(latest?.cash ?? null)}</b><span>Деньги</span></div>
-          <div class="stat"><b>${latest?.gold ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_goldbars_icon.webp" alt="" />Золото</span></div>
-          <div class="stat"><b>${latest?.unlocks ?? "—"}</b><span>Открытия</span></div>
-          <div class="stat"><b>${money(latest?.account_value ?? null)}</b><span>Стоимость</span></div>
-          <div class="stat"><b>${latest?.role_assault ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_role_infantry.webp" alt="" />Штурм</span></div>
-          <div class="stat"><b>${latest?.role_medic ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_role_medic.webp" alt="" />Медик</span></div>
-          <div class="stat"><b>${latest?.role_recon ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_role_recon.webp" alt="" />Разведка</span></div>
-          <div class="stat"><b>${latest?.role_support ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_role_support.webp" alt="" />Поддержка</span></div>
-          <div class="stat"><b>${latest?.role_driver ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_role_driver.webp" alt="" />Водитель</span></div>
-          <div class="stat"><b>${latest?.role_pilot ?? "—"}</b><span><img class="stat-ico" src="/art/t_ui_icon_role_pilot.webp" alt="" />Пилот</span></div>
-        </div>
-        ${chart(profile.history)}
-        <p class="note">Снимков: ${profile.history.length}.</p>
-        <p>${profile.squad ? `Сквад [${profile.squad.tag}] ${profile.squad.name}` : "Сквада нет."}</p>
-        ${mine ? `<div class="row">
-          <button class="btn small" id="resync" type="button">Обновить статистику</button>
-          <label><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
-          ${me.discordLink ? `<a class="btn ghost" href="/auth/discord">Привязать Discord</a>` : ""}
-        </div>
-        <p class="note">Вход на сайт — через Steam. Цифры подтягивает кнопка выше (игра должна быть закрыта).</p>` : ""}
+        <article class="dossier">
+          <header class="dossier-hero${banner ? " has-banner" : ""}">
+            ${banner ? `<div class="dossier-banner" style="background-image:url('${esc(banner)}')"></div>` : ""}
+            <div class="dossier-id">
+              <div class="dossier-face">
+                <img class="dossier-avatar" alt="" src="${esc(user.avatar ?? "")}" />
+                ${logo ? `<img class="dossier-clan" alt="" src="${esc(logo)}" />` : ""}
+              </div>
+              <div>
+                <p class="eyebrow">Досье · сезон 02</p>
+                <h1>${esc(user.persona ?? user.steam_id)}</h1>
+                <div class="dossier-tags">
+                  <span class="pill">${esc(place)}</span>
+                  ${primary.level ? `<span class="pill now">${esc(primary.name)} ${primary.level}</span>` : ""}
+                  ${squad ? `<a class="pill" href="/squad/?id=${squad.id}">[${esc(squad.tag)}] ${esc(squad.name)}</a>` : `<span class="pill old">без сквада</span>`}
+                  ${user.country ? `<span class="pill">${esc(user.country)}</span>` : ""}
+                  ${user.discord_name ? `<span class="pill">Discord ${esc(user.discord_name)}</span>` : ""}
+                </div>
+              </div>
+              <div class="dossier-level">
+                <img src="/art/t_ui_icon_careerlevel_600.webp" alt="" />
+                <b>${latest?.wardog_level ?? "—"}</b>
+                <span>уровень ${shift(latest?.wardog_level as number | null, previous?.wardog_level as number | null)}</span>
+              </div>
+            </div>
+          </header>
+          ${syncNote ? `<p class="note dossier-alert" id="sync-note">${esc(syncNote)}</p>` : `<p class="note" id="sync-note"></p>`}
+          <section class="dossier-meters">
+            <div><span>Опыт ${shift(latest?.xp as number | null, previous?.xp as number | null)}</span><b>${num(latest?.xp as number | null)}</b></div>
+            <div><span>Деньги ${shift(latest?.cash as number | null, previous?.cash as number | null)}</span><b>${money(latest?.cash as number | null)}</b></div>
+            <div><span>Золото ${shift(latest?.gold as number | null, previous?.gold as number | null)}</span><b><img src="/art/t_ui_goldbars_icon.webp" alt="" />${latest?.gold ?? "—"}</b></div>
+            <div><span>Открытия</span><b>${latest?.unlocks ?? "—"}</b></div>
+            <div><span>Стоимость</span><b>${money(latest?.account_value as number | null)}</b></div>
+            <div><span>Снимков</span><b>${history.length}</b></div>
+          </section>
+          <section class="dossier-split">
+            <div class="panel">
+              <p class="eyebrow">Классы</p>
+              <h2>${primary.level ? esc(primary.name) : "Классов пока нет"}</h2>
+              <div class="class-lanes">
+                ${levels.map((role) => `
+                  <div class="lane${role.name === primary.name && role.level ? " lead" : ""}">
+                    <img src="${role.icon}" alt="" />
+                    <span>${role.name}</span>
+                    <i><b style="width:${Math.round((role.level / peak) * 100)}%"></b></i>
+                    <strong>${role.level || "—"}</strong>
+                  </div>`).join("")}
+              </div>
+            </div>
+            <div class="panel">
+              <p class="eyebrow">Как рос уровень</p>
+              <h2>${history.length > 1 ? (shift(latest?.wardog_level as number | null, history[0]?.wardog_level as number | null) ? `${shift(latest?.wardog_level as number | null, history[0]?.wardog_level as number | null)} с первого снимка` : "Уровень держится") : "Ждём второй снимок"}</h2>
+              ${chart(history as Array<{ wardog_level: number | null; created_at?: string }>)}
+              <p class="note">Последний снимок: ${esc(when(latest?.created_at) || "ещё не было")}. <a href="https://steamcommunity.com/profiles/${id}">Steam</a> · <button class="linkish" id="copy-profile" type="button">Скопировать ссылку</button></p>
+            </div>
+          </section>
+          ${mine ? `<div class="dossier-own">
+            <button class="btn small" id="resync" type="button">Обновить статистику</button>
+            <label class="check"><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
+            ${me.discordLink ? `<a class="btn ghost small" href="/auth/discord">Привязать Discord</a>` : ""}
+            <p class="note">Вход на сайт — через Steam в шапке. Цифры снимает кнопка выше, игра должна быть закрыта.</p>
+          </div>` : ""}
+        </article>
       `;
       const save = async () => {
         const show = (document.querySelector("#show-top") as HTMLInputElement).checked;
@@ -141,6 +231,27 @@ import Base from "../layouts/Base.astro";
         }
         button.disabled = false;
         note.textContent = "Цифры не пришли. Полностью закрой WARDOGS и нажми ещё раз.";
+      });
+      document.querySelector("#copy-profile")?.addEventListener("click", async () => {
+        const button = document.querySelector<HTMLButtonElement>("#copy-profile");
+        if (!button) return;
+        const link = location.href;
+        let copied = false;
+        try {
+          await navigator.clipboard.writeText(link);
+          copied = true;
+        } catch {
+          const field = document.createElement("textarea");
+          field.value = link;
+          field.setAttribute("readonly", "");
+          field.style.position = "fixed";
+          field.style.left = "-9999px";
+          document.body.append(field);
+          field.select();
+          try { copied = document.execCommand("copy"); } catch { copied = false; }
+          field.remove();
+        }
+        button.textContent = copied ? "Ссылка скопирована" : "Не скопировалось";
       });
     }
   }

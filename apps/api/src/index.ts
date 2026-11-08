@@ -484,7 +484,7 @@ app.get("/auth/wardogs/start", async (request, reply) => {
   await rememberAuth(state, next);
   const url = new URL("https://wardogstracker.gg/api/connect");
   url.searchParams.set("client_id", config.trackerClientId);
-  url.searchParams.set("redirect_uri", `${config.siteOrigin}/auth/wardogs`);
+  url.searchParams.set("redirect_uri", config.trackerRedirectUri);
   url.searchParams.set("state", state);
   return continueOffsite(reply, url.toString(), [
     cookieString("wd_next", encodeURIComponent(next), AUTH_COOKIE_AGE),
@@ -508,7 +508,7 @@ async function tradeWardogsCode(code: string): Promise<{ fail: string; traded: T
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({ code, redirect_uri: `${config.siteOrigin}/auth/wardogs` }),
+      body: JSON.stringify({ code, redirect_uri: config.trackerRedirectUri }),
       signal: AbortSignal.timeout(120_000),
     });
     tokenStatus = response.status;
@@ -824,15 +824,29 @@ app.get("/api/players/:steamId", async (request, reply) => {
     ORDER BY created_at ASC
     LIMIT 60
   `;
-  const squads = await sql`
-    SELECT sq.id, sq.name, sq.tag, m.role, m.status
+  const squads = await sql<Array<{ id: number; name: string; tag: string; role: string; status: string; logo_path: string | null; banner_path: string | null }>>`
+    SELECT sq.id, sq.name, sq.tag, sq.logo_path, sq.banner_path, m.role, m.status
     FROM squad_members m
     JOIN squads sq ON sq.id = m.squad_id
     WHERE m.steam_id = ${steamId} AND m.status = 'member' AND sq.status = 'approved'
     LIMIT 1
   `;
   const sync = await sql`SELECT status, expires_at, updated_at FROM sync_sessions WHERE steam_id = ${steamId}`;
-  return { user: users[0], history, squad: squads[0] ?? null, sync: sync[0] ?? null };
+  const picture = (file: string | null) => file && /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(file) ? `/api/media/${file}` : "";
+  const squad = squads[0];
+  return {
+    user: users[0],
+    history,
+    squad: squad ? {
+      id: squad.id,
+      name: squad.name,
+      tag: squad.tag,
+      role: squad.role,
+      logo: picture(squad.logo_path),
+      banner: picture(squad.banner_path),
+    } : null,
+    sync: sync[0] ?? null,
+  };
 });
 
 app.post("/api/bot/link", async (request, reply) => {
@@ -1125,6 +1139,36 @@ app.post("/api/squads/:id/join", async (request, reply) => {
     }
     throw error;
   }
+  return { ok: true };
+});
+
+app.post("/api/squads/:id/report", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  if (!steamId) return reply.code(401).send({ error: "steam" });
+  const id = Number((request.params as { id: string }).id);
+  const body = asObject(request.body);
+  const target = text(body?.steamId, 20);
+  const note = text(body?.note, 400);
+  if (!Number.isInteger(id) || !/^\d{17}$/.test(target) || note.length < 10) return reply.code(400).send({ error: "bad_request" });
+  if (target === steamId) return reply.code(400).send({ error: "self" });
+  const squad = await sql`SELECT id FROM squads WHERE id = ${id} AND status = 'approved'`;
+  if (!squad.length) return notFound(reply);
+  const member = await sql`
+    SELECT 1 FROM squad_members
+    WHERE squad_id = ${id} AND steam_id = ${target} AND status = 'member'
+  `;
+  if (!member.length) return reply.code(400).send({ error: "not_member" });
+  const recent = await sql`
+    SELECT 1 FROM squad_reports
+    WHERE squad_id = ${id} AND target_steam_id = ${target} AND reporter_steam_id = ${steamId}
+      AND created_at > NOW(3) - INTERVAL 7 DAY
+  `;
+  if (recent.length) return reply.code(400).send({ error: "duplicate" });
+  await sql`
+    INSERT INTO squad_reports (squad_id, target_steam_id, reporter_steam_id, note)
+    VALUES (${id}, ${target}, ${steamId}, ${note})
+  `;
+  await sql`INSERT INTO events (name, steam_id) VALUES ('squad_report', ${steamId})`;
   return { ok: true };
 });
 
@@ -1453,6 +1497,18 @@ app.get("/api/admin/overview", async (request, reply) => {
     ORDER BY a.created_at
     LIMIT 40
   `;
+  const reports = await sql`
+    SELECT r.id, r.note, r.created_at, sq.tag, sq.name,
+           target.persona AS target_name, target.steam_id AS target_steam_id,
+           reporter.persona AS reporter_name
+    FROM squad_reports r
+    JOIN squads sq ON sq.id = r.squad_id
+    JOIN users target ON target.steam_id = r.target_steam_id
+    JOIN users reporter ON reporter.steam_id = r.reporter_steam_id
+    WHERE r.status = 'open'
+    ORDER BY r.created_at DESC
+    LIMIT 40
+  `;
   const builds = await sql`
     SELECT b.id, b.title, b.season, b.hidden, u.persona
     FROM builds b
@@ -1477,6 +1533,7 @@ app.get("/api/admin/overview", async (request, reply) => {
     players,
     squads,
     assets,
+    reports,
     builds,
     sync,
     gate: `/g/${config.adminPath}`,
@@ -1513,6 +1570,14 @@ app.post("/api/admin/builds/:id/hide", async (request, reply) => {
   const id = Number((request.params as { id: string }).id);
   const hide = asObject(request.body)?.hide === true;
   await sql`UPDATE builds SET hidden = ${hide} WHERE id = ${id}`;
+  return { ok: true };
+});
+
+app.post("/api/admin/reports/:id/close", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id)) return notFound(reply);
+  await sql`UPDATE squad_reports SET status = 'closed' WHERE id = ${id}`;
   return { ok: true };
 });
 

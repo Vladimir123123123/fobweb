@@ -11,7 +11,7 @@ function required(name: string, fallback?: string) {
 
 const requestedOrigin = (process.env.SITE_ORIGIN ?? "").replace(/\/$/, "");
 const siteOrigin = !requestedOrigin || /localhost|127\.0\.0\.1/.test(requestedOrigin)
-  ? "https://wd-axis.ru"
+  ? "https://fob-wd.ru"
   : requestedOrigin;
 
 export const config = {
@@ -25,6 +25,7 @@ export const config = {
   botKey: (process.env.BOT_API_KEY ?? process.env.SYNC_INGEST_KEY ?? "").trim(),
   trackerKey: (process.env.TRACKER_KEY ?? "").trim(),
   trackerClientId: (process.env.TRACKER_CLIENT_ID ?? "").trim(),
+  trackerRedirectUri: (process.env.TRACKER_REDIRECT_URI ?? `${siteOrigin}/auth/wardogs`).replace(/\/$/, ""),
   discordId: (process.env.DISCORD_CLIENT_ID ?? "").trim(),
   discordSecret: (process.env.DISCORD_CLIENT_SECRET ?? "").trim(),
   databaseUrl: required("DATABASE_URL"),
