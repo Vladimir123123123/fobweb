@@ -216,25 +216,33 @@ import Base from "../layouts/Base.astro";
         button.disabled = true;
         note.classList.add("dossier-alert");
         note.textContent = "Обновляю статистику…";
-        const response = await fetch("/api/me/sync", { method: "POST" });
-        if (response.status === 401) {
-          location.href = `/auth/steam?next=${encodeURIComponent(`/p/?id=${id}`)}`;
-          return;
-        }
-        const body = await response.json().catch(() => ({})) as {
-          saved?: boolean;
-          unchanged?: boolean;
-          reason?: string;
-          syncedAt?: string;
-        };
-        if (body.saved) {
-          location.href = body.unchanged ? `/p/?id=${id}&sync=same` : `/p/?id=${id}`;
-          return;
+        try {
+          const feed = await fetch(`https://wardogstracker.gg/api/v1/players/${id}`, {
+            signal: AbortSignal.timeout(8_000),
+          });
+          const pack = feed.ok ? await feed.json().catch(() => null) : null;
+          const response = await fetch("/api/me/sync", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(pack && pack.player ? { player: pack.player } : {}),
+            signal: AbortSignal.timeout(8_000),
+          });
+          if (response.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(`/p/?id=${id}`)}`;
+            return;
+          }
+          const result = await response.json().catch(() => ({})) as { saved?: boolean; unchanged?: boolean; reason?: string };
+          if (result.saved) {
+            location.href = result.unchanged ? `/p/?id=${id}&sync=same` : `/p/?id=${id}`;
+            return;
+          }
+          note.textContent = result.reason === "tracker_down"
+            ? "База карьеры не ответила. Нажми ещё раз."
+            : "В открытой базе этого игрока ещё нет.";
+        } catch {
+          note.textContent = "Слишком долго. Нажми ещё раз — запрос оборвался.";
         }
         button.disabled = false;
-        note.textContent = body.reason === "tracker_down"
-          ? "Сейчас не достучались до базы карьеры. Нажми ещё раз через минуту."
-          : "В открытой базе этого игрока ещё нет. Сыграй сессию и обнови позже.";
       });
       document.querySelector("#copy-profile")?.addEventListener("click", async () => {
         const button = document.querySelector<HTMLButtonElement>("#copy-profile");

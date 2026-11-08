@@ -247,8 +247,8 @@ function sameCareer(row: Record<string, unknown>, stats: NonNullable<Parameters<
     && num(row.role_pilot) === roleLevel(stats, "pilot");
 }
 
-async function trackerGet(path: string, withKey: boolean) {
-  const wait = deadline(20_000);
+async function trackerGet(path: string, withKey: boolean, ms = 6_000) {
+  const wait = deadline(ms);
   try {
     const headers: Record<string, string> = { accept: "application/json", "user-agent": "wd-axis/career" };
     if (withKey && config.trackerKey) headers.authorization = `Bearer ${config.trackerKey}`;
@@ -390,34 +390,30 @@ async function pullConnectCareer(steamId: string) {
   return saveCareer(steamId, stats, "bot_connect", false);
 }
 
-async function refreshCareer(steamId: string) {
-  // Сами забираем открытую копию карьеры. Живое чтение из клиента игры студия не отдаёт.
-  const pub = await trackerGet(`/api/v1/players/${steamId}`, false);
-  let json = pub.json;
-  let source = "tracker";
-  let stats = playerStats(json);
-  if (!stats && config.trackerKey) {
-    const connect = await trackerGet(`/api/v1/connect/players/${steamId}`, true);
-    json = connect.json;
-    source = "connect";
-    stats = playerStats(json);
-  }
+async function applyCareer(steamId: string, json: unknown, source: string) {
+  const stats = playerStats(json);
   if (!stats) {
-    return {
-      saved: false,
-      unchanged: false,
-      reason: pub.status === 0 ? "tracker_down" : "empty",
-      source: null as string | null,
-      syncedAt: "",
-    };
+    return { saved: false, unchanged: false, reason: "empty", source: null as string | null, syncedAt: "" };
   }
   const syncedAt = trackerSyncedAt(json);
   const latest = await latestSnapshot(steamId);
   if (latest && sameCareer(latest, stats)) {
     return { saved: true, unchanged: true, reason: "same", source, syncedAt };
   }
-  const saved = await saveCareer(steamId, stats, source === "connect" ? "bot_connect" : "tracker", false);
+  const saved = await saveCareer(steamId, stats, source, false);
   return { saved, unchanged: false, reason: saved ? "ok" : "bad_stats", source, syncedAt };
+}
+
+async function refreshCareer(steamId: string) {
+  const pub = await trackerGet(`/api/v1/players/${steamId}`, false, 6_000);
+  if (playerStats(pub.json)) return applyCareer(steamId, pub.json, "tracker");
+  return {
+    saved: false,
+    unchanged: false,
+    reason: pub.status === 0 ? "tracker_down" : "empty",
+    source: null as string | null,
+    syncedAt: "",
+  };
 }
 
 async function ensureCareer(steamId: string) {
@@ -766,17 +762,15 @@ app.get("/api/me", async (request) => {
 app.post("/api/me/sync", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!steamId) return reply.code(401).send({ error: "steam" });
-  // Сначала Connect (с ключом), потом публичный Tracker — как у бота.
+  const body = asObject(request.body);
+  const brought = body?.player && typeof body.player === "object" ? body.player as Record<string, unknown> : null;
+  const broughtId = brought && typeof brought.steamId === "string" ? brought.steamId : "";
+  if (brought && broughtId === steamId && playerStats({ player: brought })) {
+    const result = await applyCareer(steamId, { player: brought }, "tracker");
+    return { ok: true, ...result };
+  }
   const result = await refreshCareer(steamId);
-  return {
-    ok: true,
-    saved: result.saved,
-    unchanged: result.unchanged,
-    reason: result.reason,
-    source: result.source,
-    syncedAt: result.syncedAt,
-    live: Boolean(config.trackerKey && config.trackerClientId),
-  };
+  return { ok: true, ...result };
 });
 
 app.patch("/api/me", async (request, reply) => {
