@@ -199,9 +199,10 @@ import Base from "../layouts/Base.astro";
           </section>
           ${mine ? `<div class="dossier-own">
             <button class="btn small" id="resync" type="button">Обновить статистику</button>
+            <a class="btn ghost small" href="/auth/wardogs/start?next=/p&steamId=${id}">Снять из игры</a>
             <label class="check"><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
             ${me.discordLink ? `<a class="btn ghost small" href="/auth/discord">Привязать Discord</a>` : ""}
-            <p class="note">Вход на сайт — через Steam в шапке. Цифры снимает кнопка выше, игра должна быть закрыта.</p>
+            <p class="note">«Обновить» берёт последние цифры Tracker. «Снять из игры» читает карьеру сейчас — WARDOGS должна быть закрыта.</p>
           </div>` : ""}
         </article>
       `;
@@ -218,19 +219,36 @@ import Base from "../layouts/Base.astro";
         const note = document.querySelector("#sync-note")!;
         const button = document.querySelector<HTMLButtonElement>("#resync")!;
         button.disabled = true;
+        note.classList.add("dossier-alert");
         note.textContent = "Обновляю статистику…";
         const response = await fetch("/api/me/sync", { method: "POST" });
         if (response.status === 401) {
           location.href = `/auth/steam?next=${encodeURIComponent(`/p/?id=${id}`)}`;
           return;
         }
-        const body = await response.json().catch(() => ({}));
-        if (body.saved) {
+        const body = await response.json().catch(() => ({})) as {
+          saved?: boolean;
+          unchanged?: boolean;
+          reason?: string;
+          syncedAt?: string;
+        };
+        if (body.saved && !body.unchanged) {
           location.href = `/p/?id=${id}`;
           return;
         }
         button.disabled = false;
-        note.textContent = "Цифры не пришли. Полностью закрой WARDOGS и нажми ещё раз.";
+        if (body.unchanged) {
+          const when = body.syncedAt
+            ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(body.syncedAt))
+            : "";
+          note.textContent = when
+            ? `Tracker всё ещё держит снимок с ${when}. Закрой WARDOGS и нажми «Снять из игры».`
+            : "Цифры те же. Закрой WARDOGS и нажми «Снять из игры».";
+          return;
+        }
+        note.textContent = body.reason === "tracker_down"
+          ? "Сервер не достучался до Tracker. Нажми ещё раз через минуту."
+          : "Живых цифр нет. Закрой WARDOGS и нажми «Снять из игры».";
       });
       document.querySelector("#copy-profile")?.addEventListener("click", async () => {
         const button = document.querySelector<HTMLButtonElement>("#copy-profile");

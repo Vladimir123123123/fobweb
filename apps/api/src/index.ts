@@ -72,8 +72,14 @@ function loadoutCode(value: unknown) {
 function whole(value: unknown, max: number) {
   if (value === null || value === undefined) return null;
   const number = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(number) || number < 0 || number > max) return undefined;
-  return number;
+  if (!Number.isFinite(number) || number < 0 || number > max) return undefined;
+  return Math.round(number);
+}
+
+function deadline(ms: number) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return { signal: ctrl.signal, stop: () => clearTimeout(timer) };
 }
 
 function readCookie(header: string | undefined, name: string) {
@@ -241,27 +247,48 @@ function sameCareer(row: Record<string, unknown>, stats: NonNullable<Parameters<
     && num(row.role_pilot) === roleLevel(stats, "pilot");
 }
 
-async function pullPublicCareer(steamId: string) {
+async function trackerGet(path: string, withKey: boolean) {
+  const wait = deadline(20_000);
   try {
-    const response = await fetch(`https://wardogstracker.gg/api/v1/players/${steamId}`, {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) return false;
-    const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
-    const stats = body.player?.stats ?? null;
-    if (!stats) return false;
-    const latest = await sql<Record<string, unknown>[]>`
-      SELECT wardog_level, xp, cash, gold, unlocks,
-             role_assault, role_medic, role_recon, role_support, role_driver, role_pilot
-      FROM snapshots WHERE steam_id = ${steamId}
-      ORDER BY created_at DESC LIMIT 1
-    `;
-    if (latest[0] && sameCareer(latest[0], stats)) return true;
-    return saveCareer(steamId, stats, "tracker", false);
+    const headers: Record<string, string> = { accept: "application/json", "user-agent": "wd-axis/career" };
+    if (withKey && config.trackerKey) headers.authorization = `Bearer ${config.trackerKey}`;
+    const response = await fetch(`https://wardogstracker.gg${path}`, { headers, signal: wait.signal });
+    wait.stop();
+    const raw = await response.text();
+    let json: unknown = null;
+    try {
+      json = raw ? JSON.parse(raw) as unknown : null;
+    } catch {
+      json = null;
+    }
+    return { status: response.status, json };
   } catch {
-    return false;
+    wait.stop();
+    return { status: 0, json: null };
   }
+}
+
+function playerStats(json: unknown): Parameters<typeof saveCareer>[1] | null {
+  if (!json || typeof json !== "object") return null;
+  const root = json as Record<string, unknown>;
+  const player = root.player && typeof root.player === "object" ? root.player as Record<string, unknown> : root;
+  const stats = player.stats;
+  if (!stats || typeof stats !== "object") return null;
+  return stats as Parameters<typeof saveCareer>[1];
+}
+
+function trackerSyncedAt(json: unknown) {
+  const stats = playerStats(json) as { syncedAt?: unknown } | null;
+  return typeof stats?.syncedAt === "string" ? stats.syncedAt : "";
+}
+
+async function pullPublicCareer(steamId: string) {
+  const got = await trackerGet(`/api/v1/players/${steamId}`, false);
+  const stats = playerStats(got.json);
+  if (!stats) return false;
+  const latest = await latestSnapshot(steamId);
+  if (latest && sameCareer(latest, stats)) return true;
+  return saveCareer(steamId, stats, "tracker", false);
 }
 
 async function refreshPublicCareers() {
@@ -356,22 +383,46 @@ async function latestSnapshot(steamId: string) {
 
 async function pullConnectCareer(steamId: string) {
   if (!config.trackerKey) return false;
-  try {
-    const response = await fetch(`https://wardogstracker.gg/api/v1/connect/players/${steamId}`, {
-      headers: { authorization: `Bearer ${config.trackerKey}` },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) return false;
-    const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
-    return saveCareer(steamId, body.player?.stats ?? null, "bot_connect", false);
-  } catch {
-    return false;
+  const got = await trackerGet(`/api/v1/connect/players/${steamId}`, true);
+  const stats = playerStats(got.json);
+  if (!stats) return false;
+  const latest = await latestSnapshot(steamId);
+  if (latest && sameCareer(latest, stats)) return true;
+  return saveCareer(steamId, stats, "bot_connect", false);
+}
+
+async function refreshCareer(steamId: string) {
+  const connect = config.trackerKey ? await trackerGet(`/api/v1/connect/players/${steamId}`, true) : { status: 0, json: null };
+  let json = connect.json;
+  let source = "connect";
+  let stats = playerStats(json);
+  if (!stats) {
+    const pub = await trackerGet(`/api/v1/players/${steamId}`, false);
+    json = pub.json;
+    source = "tracker";
+    stats = playerStats(json);
+    if (!stats) {
+      return {
+        saved: false,
+        unchanged: false,
+        reason: pub.status === 0 ? "tracker_down" : "empty",
+        source: null as string | null,
+        syncedAt: "",
+      };
+    }
   }
+  const syncedAt = trackerSyncedAt(json);
+  const latest = await latestSnapshot(steamId);
+  if (latest && sameCareer(latest, stats)) {
+    return { saved: true, unchanged: true, reason: "same", source, syncedAt };
+  }
+  const saved = await saveCareer(steamId, stats, source === "connect" ? "bot_connect" : "tracker", false);
+  return { saved, unchanged: false, reason: saved ? "ok" : "bad_stats", source, syncedAt };
 }
 
 async function ensureCareer(steamId: string) {
-  if (await pullConnectCareer(steamId)) return true;
-  return pullPublicCareer(steamId);
+  const result = await refreshCareer(steamId);
+  return result.saved;
 }
 
 async function upsertBotUser(steamId: string, discordId: string, discordName: string) {
@@ -716,11 +767,15 @@ app.post("/api/me/sync", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!steamId) return reply.code(401).send({ error: "steam" });
   // Сначала Connect (с ключом), потом публичный Tracker — как у бота.
-  const saved = await ensureCareer(steamId);
+  const result = await refreshCareer(steamId);
   return {
     ok: true,
-    saved,
-    source: saved ? "tracker" : null,
+    saved: result.saved,
+    unchanged: result.unchanged,
+    reason: result.reason,
+    source: result.source,
+    syncedAt: result.syncedAt,
+    live: Boolean(config.trackerKey && config.trackerClientId),
   };
 });
 

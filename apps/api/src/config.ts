@@ -25,7 +25,9 @@ export const config = {
   botKey: (process.env.BOT_API_KEY ?? process.env.SYNC_INGEST_KEY ?? "").trim(),
   trackerKey: (process.env.TRACKER_KEY ?? "").trim(),
   trackerClientId: (process.env.TRACKER_CLIENT_ID ?? "").trim(),
-  trackerRedirectUri: (process.env.TRACKER_REDIRECT_URI ?? `${siteOrigin}/auth/wardogs`).replace(/\/$/, ""),
+  trackerRedirectUri: ((process.env.TRACKER_REDIRECT_URI ?? "").trim()
+    || (siteOrigin.includes("fob-wd.ru") ? "https://wd-axis.ru/auth/wardogs" : `${siteOrigin}/auth/wardogs`)
+  ).replace(/\/$/, ""),
   discordId: (process.env.DISCORD_CLIENT_ID ?? "").trim(),
   discordSecret: (process.env.DISCORD_CLIENT_SECRET ?? "").trim(),
   databaseUrl: required("DATABASE_URL"),
