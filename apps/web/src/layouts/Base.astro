@@ -6,8 +6,9 @@ interface Props {
   description?: string;
   robots?: string;
   fit?: boolean;
+  wide?: boolean;
 }
-const { title, description = "Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam.", robots, fit = false } = Astro.props;
+const { title, description = "Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam.", robots, fit = false, wide = false } = Astro.props;
 const metrika = import.meta.env.PUBLIC_METRIKA_ID ?? "";
 const path = Astro.url.pathname;
 ---
@@ -30,7 +31,7 @@ const path = Astro.url.pathname;
       `}</script>
     )}
   </head>
-  <body class={fit ? "fit" : undefined} data-metrika={metrika}>
+  <body class:list={{ fit, wide }} data-metrika={metrika}>
     <header class="topbar">
       <div class="wrap top">
         <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" /><span>FOB<small>WARDOGS · СНГ</small></span></a>

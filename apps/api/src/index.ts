@@ -23,6 +23,7 @@ const SORTS: Record<string, string> = {
 };
 
 const PUBLIC_EVENTS = new Set(["page_view", "discord_click", "share_build", "squad_banner_click"]);
+const PROFILE_ACCENTS = new Set(["orange", "gold", "blue", "red", "green"]);
 const hits = new Map<string, { n: number; at: number }>();
 
 function steamIdOf(request: FastifyRequest) {
@@ -286,9 +287,7 @@ async function pullPublicCareer(steamId: string) {
   const got = await trackerGet(`/api/v1/players/${steamId}`, false);
   const stats = playerStats(got.json);
   if (!stats) return false;
-  const latest = await latestSnapshot(steamId);
-  if (latest && sameCareer(latest, stats)) return true;
-  return saveCareer(steamId, stats, "tracker", false);
+  return (await storeCareer(steamId, stats, "tracker", false)).ok;
 }
 
 async function refreshPublicCareers() {
@@ -313,7 +312,7 @@ async function refreshCareers() {
       });
       if (!response.ok) continue;
       const body = await response.json() as { player?: { stats?: Parameters<typeof saveCareer>[1] } };
-      await saveCareer(row.steam_id, body.player?.stats ?? null, "refresh", false);
+      await storeCareer(row.steam_id, body.player?.stats ?? null, "refresh", false);
     } catch (error) {
       app.log.error(error);
     }
@@ -370,7 +369,7 @@ function botAuthorized(request: FastifyRequest) {
 
 async function latestSnapshot(steamId: string) {
   const rows = await sql<Record<string, unknown>[]>`
-    SELECT steam_id, season, wardog_level, xp, account_value, cash, gold, unlocks,
+    SELECT id, steam_id, season, wardog_level, xp, account_value, cash, gold, unlocks,
            role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source, created_at
     FROM snapshots
     WHERE steam_id = ${steamId} AND season = ${config.season}
@@ -380,14 +379,50 @@ async function latestSnapshot(steamId: string) {
   return rows[0] ?? null;
 }
 
+function unlockCash(json: unknown) {
+  if (!json || typeof json !== "object") return null;
+  const cash = (json as { unlockValue?: { cash?: unknown } }).unlockValue?.cash;
+  const value = whole(cash, 50_000_000_000);
+  return value == null ? null : value;
+}
+
+async function attachAccountValue<T extends { accountValue?: unknown } | null>(steamId: string, stats: T): Promise<T> {
+  if (!stats || whole(stats.accountValue, 50_000_000_000) != null) return stats;
+  const got = await trackerGet(`/api/v1/players/${steamId}/unlocks`, false, 8_000);
+  const cash = unlockCash(got.json);
+  if (cash == null) return stats;
+  return { ...stats, accountValue: cash };
+}
+
+async function storeCareer(steamId: string, stats: Parameters<typeof saveCareer>[1], source: string, openSession: boolean) {
+  const ready = await attachAccountValue(steamId, stats);
+  if (!ready) return { ok: false, unchanged: false };
+  const latest = await latestSnapshot(steamId);
+  const nextValue = whole(ready.accountValue, 50_000_000_000);
+  if (latest && sameCareer(latest, ready)) {
+    const prev = latest.account_value == null ? null : Number(latest.account_value);
+    if (nextValue != null && prev !== nextValue) {
+      await sql`UPDATE snapshots SET account_value = ${nextValue} WHERE id = ${latest.id}`;
+    }
+    if (openSession) {
+      await sql`
+        INSERT INTO sync_sessions (steam_id, status, expires_at, updated_at)
+        VALUES (${steamId}, 'active', DATE_ADD(NOW(), INTERVAL 3 HOUR), NOW())
+        ON DUPLICATE KEY UPDATE status = 'active', expires_at = DATE_ADD(NOW(), INTERVAL 3 HOUR), updated_at = NOW()
+      `;
+    }
+    return { ok: true, unchanged: nextValue == null || prev === nextValue };
+  }
+  const saved = await saveCareer(steamId, ready, source, openSession);
+  return { ok: saved, unchanged: false };
+}
+
 async function pullConnectCareer(steamId: string) {
   if (!config.trackerKey) return false;
   const got = await trackerGet(`/api/v1/connect/players/${steamId}`, true);
   const stats = playerStats(got.json);
   if (!stats) return false;
-  const latest = await latestSnapshot(steamId);
-  if (latest && sameCareer(latest, stats)) return true;
-  return saveCareer(steamId, stats, "bot_connect", false);
+  return (await storeCareer(steamId, stats, "bot_connect", false)).ok;
 }
 
 async function applyCareer(steamId: string, json: unknown, source: string) {
@@ -396,12 +431,14 @@ async function applyCareer(steamId: string, json: unknown, source: string) {
     return { saved: false, unchanged: false, reason: "empty", source: null as string | null, syncedAt: "" };
   }
   const syncedAt = trackerSyncedAt(json);
-  const latest = await latestSnapshot(steamId);
-  if (latest && sameCareer(latest, stats)) {
-    return { saved: true, unchanged: true, reason: "same", source, syncedAt };
-  }
-  const saved = await saveCareer(steamId, stats, source, false);
-  return { saved, unchanged: false, reason: saved ? "ok" : "bad_stats", source, syncedAt };
+  const stored = await storeCareer(steamId, stats, source, false);
+  return {
+    saved: stored.ok,
+    unchanged: stored.unchanged,
+    reason: stored.ok ? (stored.unchanged ? "same" : "ok") : "bad_stats",
+    source,
+    syncedAt,
+  };
 }
 
 async function refreshCareer(steamId: string) {
@@ -605,7 +642,7 @@ async function finishWardogsJob(ticket: string) {
     const careerStats = traded?.player?.stats ?? null;
     let saved = false;
     try {
-      saved = await saveCareer(steamId, careerStats, "login", true);
+      saved = (await storeCareer(steamId, careerStats, "login", true)).ok;
     } catch (error) {
       app.log.error(error);
     }
@@ -751,7 +788,7 @@ app.get("/api/me", async (request) => {
   if (!steamId) return { user: null };
   const rows = await sql<Array<Record<string, unknown>>>`
     SELECT u.steam_id, u.persona, u.avatar, u.country, u.cis_opt_in, u.hide_leaderboard,
-           u.discord_name, s.status AS sync_status, s.expires_at
+           u.discord_name, u.motto, u.accent, s.status AS sync_status, s.expires_at
     FROM users u
     LEFT JOIN sync_sessions s ON s.steam_id = u.steam_id
     WHERE u.steam_id = ${steamId}
@@ -784,6 +821,8 @@ app.patch("/api/me", async (request, reply) => {
   if (!steamId) return reply.code(401).send({ error: "steam" });
   const body = asObject(request.body);
   if (!body) return reply.code(400).send({ error: "bad_request" });
+  const accent = typeof body.accent === "string" ? text(body.accent, 16) : undefined;
+  if (accent && !PROFILE_ACCENTS.has(accent)) return reply.code(400).send({ error: "bad_request" });
   // Один смысл: showInTop=true → в рейтинге; false → скрыт. cis_opt_in держим 1, пока сам не вышел.
   if (typeof body.showInTop === "boolean") {
     if (body.showInTop) {
@@ -798,6 +837,13 @@ app.patch("/api/me", async (request, reply) => {
     if (typeof body.hideLeaderboard === "boolean") {
       await sql`UPDATE users SET hide_leaderboard = ${body.hideLeaderboard} WHERE steam_id = ${steamId}`;
     }
+  }
+  if (typeof body.motto === "string") {
+    const motto = text(body.motto, 80).replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+    await sql`UPDATE users SET motto = ${motto || null} WHERE steam_id = ${steamId}`;
+  }
+  if (accent !== undefined) {
+    await sql`UPDATE users SET accent = ${accent || null} WHERE steam_id = ${steamId}`;
   }
   return { ok: true };
 });
@@ -867,7 +913,7 @@ app.get("/api/players/:steamId", async (request, reply) => {
   const steamId = (request.params as { steamId: string }).steamId;
   if (!/^\d{17}$/.test(steamId)) return notFound(reply);
   const users = await sql<Array<Record<string, unknown>>>`
-    SELECT steam_id, persona, avatar, country, cis_opt_in, hide_leaderboard, discord_name, created_at
+    SELECT steam_id, persona, avatar, country, cis_opt_in, hide_leaderboard, discord_name, motto, accent, created_at
     FROM users WHERE steam_id = ${steamId}
   `;
   if (!users.length) return notFound(reply);

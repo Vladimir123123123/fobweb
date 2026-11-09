@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   hide_leaderboard tinyint(1) NOT NULL DEFAULT 0,
   discord_id varchar(32),
   discord_name varchar(80),
+  motto varchar(80),
+  accent varchar(16),
   created_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
   last_login_at datetime(3)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -83,6 +85,21 @@ CREATE TABLE IF NOT EXISTS squad_members (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE UNIQUE INDEX IF NOT EXISTS squad_members_one ON squad_members (steam_id);
+
+CREATE TABLE IF NOT EXISTS squad_reports (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  squad_id bigint NOT NULL,
+  target_steam_id varchar(20) NOT NULL,
+  reporter_steam_id varchar(20) NOT NULL,
+  note varchar(400) NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'open',
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  CONSTRAINT reports_squad FOREIGN KEY (squad_id) REFERENCES squads (id) ON DELETE CASCADE,
+  CONSTRAINT reports_target FOREIGN KEY (target_steam_id) REFERENCES users (steam_id),
+  CONSTRAINT reports_reporter FOREIGN KEY (reporter_steam_id) REFERENCES users (steam_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS squad_reports_open ON squad_reports (status, created_at);
 
 CREATE TABLE IF NOT EXISTS admins (
   steam_id varchar(20) PRIMARY KEY,

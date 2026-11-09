@@ -1,7 +1,9 @@
 /**
  * Снимок предметов из файлов игры (warpuppies/wardogs-data) в один JSON для калькулятора.
  * Живой API при открытии страницы не вызывается.
+ * Если в файлах игры нет цены, берём её из базы Tracker. Нужен TRACKER_DATABASE_KEY в .env.
  */
+import { readFileSync } from "node:fs";
 const SOURCE = "https://warpuppies.github.io/wardogs-data/v1";
 const SLOT_LABEL = {
   Sight: "Прицел",
@@ -37,19 +39,66 @@ function vendorPrice(item) {
   return Math.min(...prices);
 }
 
+function databaseKey() {
+  try {
+    const text = readFileSync(new URL("../.env", import.meta.url), "utf8");
+    const line = text.split(/\r?\n/).find((row) => row.startsWith("TRACKER_DATABASE_KEY="));
+    return line ? line.slice("TRACKER_DATABASE_KEY=".length).trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+async function trackerPrices() {
+  const key = databaseKey();
+  if (!key) return new Map();
+  const headers = {
+    accept: "application/json",
+    authorization: `Bearer ${key}`,
+    "user-agent": "wd-axis/career",
+  };
+  const sections = ["weapons", "attachments", "equipment", "helmets", "armor", "vests", "backpacks", "ammunition"];
+  const prices = new Map();
+  for (const section of sections) {
+    let offset = 0;
+    for (let page = 0; page < 30; page += 1) {
+      const response = await fetch(`https://wardogstracker.gg/api/v1/database/${section}?limit=100&offset=${offset}`, { headers });
+      if (!response.ok) break;
+      const json = await response.json();
+      for (const item of json.items ?? []) {
+        if (!item.gameId || item.price == null || item.price === "") continue;
+        const price = Number(item.price);
+        if (!Number.isFinite(price) || price < 0) continue;
+        prices.set(String(item.gameId).toLowerCase(), price);
+      }
+      if (json.nextOffset == null) break;
+      offset = json.nextOffset;
+    }
+  }
+  return prices;
+}
+
+function knownPrice(item, tracker) {
+  const vendor = vendorPrice(item);
+  if (vendor != null) return vendor;
+  if (!item?.id) return null;
+  const price = tracker.get(String(item.id).toLowerCase());
+  return price == null ? null : price;
+}
+
 function skipItem(item) {
   const name = item?.name ?? "";
   return /\(Dead\)|\bTest\b/i.test(name);
 }
 
-function bySlot(items, slot) {
+function bySlot(items, slot, tracker) {
   return items
     .filter((item) => (item.tags ?? []).includes(slot) && !skipItem(item))
     .map((item) => ({
       id: item.id,
       name: item.name,
       weight: typeof item.weight === "number" ? item.weight : null,
-      price: vendorPrice(item),
+      price: knownPrice(item, tracker),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
@@ -72,7 +121,7 @@ function attachmentFits(slot, attachment) {
   return true;
 }
 
-function weaponRecord(gun, item, attachments, itemById) {
+function weaponRecord(gun, item, attachments, itemById, tracker) {
   const slots = [];
   for (const slot of gun.slots ?? []) {
     if (slot.hidden) continue;
@@ -86,7 +135,7 @@ function weaponRecord(gun, item, attachments, itemById) {
         id: attachment.id,
         name: attachment.name,
         weight: typeof linked?.weight === "number" ? linked.weight : null,
-        price: vendorPrice(linked),
+        price: knownPrice(linked, tracker),
       });
     }
     options.sort((a, b) => a.name.localeCompare(b.name, "ru"));
@@ -112,7 +161,7 @@ function weaponRecord(gun, item, attachments, itemById) {
     caliber: (gun.calibers ?? [])[0] ?? null,
     range: gun.effectiveRange ?? null,
     weight: typeof item?.weight === "number" ? item.weight : null,
-    price: vendorPrice(item),
+    price: knownPrice(item, tracker),
     archetype,
     subtitle: typeof item?.subtitle === "string" ? item.subtitle : "",
     unlock,
@@ -132,11 +181,13 @@ const itemById = new Map(itemsFile.items.map((item) => [item.id, item]));
 const guns = weaponsFile.weapons.filter((gun) => !skipItem(gun));
 const attachments = attachmentsFile.attachments.filter((attachment) => attachment?.id && attachment?.name);
 
+const tracker = await trackerPrices();
+
 function recordsFor(slot) {
-  const ids = new Set(bySlot(itemsFile.items, slot).map((item) => item.id));
+  const ids = new Set(bySlot(itemsFile.items, slot, tracker).map((item) => item.id));
   return guns
     .filter((gun) => ids.has(gun.id))
-    .map((gun) => weaponRecord(gun, itemById.get(gun.id), attachments, itemById))
+    .map((gun) => weaponRecord(gun, itemById.get(gun.id), attachments, itemById, tracker))
     .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
 
@@ -155,10 +206,10 @@ const catalog = {
   }),
   weapons: recordsFor("Inventory.Slot.Primary"),
   sidearms: recordsFor("Inventory.Slot.Sidearm"),
-  helmets: bySlot(itemsFile.items, "Inventory.Slot.Helmet"),
-  armors: bySlot(itemsFile.items, "Inventory.Slot.Armor"),
-  vests: bySlot(itemsFile.items, "Inventory.Slot.Vest"),
-  backpacks: bySlot(itemsFile.items, "Inventory.Slot.Backpack"),
+  helmets: bySlot(itemsFile.items, "Inventory.Slot.Helmet", tracker),
+  armors: bySlot(itemsFile.items, "Inventory.Slot.Armor", tracker),
+  vests: bySlot(itemsFile.items, "Inventory.Slot.Vest", tracker),
+  backpacks: bySlot(itemsFile.items, "Inventory.Slot.Backpack", tracker),
   vehicles: (vehiclesFile.vehicles ?? [])
     .filter((vehicle) => vehicle?.name && !skipItem(vehicle))
     .map((vehicle) => ({
@@ -189,5 +240,5 @@ const out = new URL("../apps/web/src/data/catalog.json", import.meta.url);
 await fs.mkdir(new URL(".", out), { recursive: true });
 await fs.writeFile(out, JSON.stringify(catalog));
 console.log(
-  `build ${catalog.gameBuild}: ${catalog.weapons.length} weapons, ${catalog.sidearms.length} sidearms, ${catalog.vehicles.length} vehicles`,
+  `build ${catalog.gameBuild}: ${catalog.weapons.length} weapons, ${catalog.sidearms.length} sidearms, ${catalog.vehicles.length} vehicles, tracker prices ${tracker.size}`,
 );

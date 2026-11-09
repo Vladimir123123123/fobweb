@@ -79,10 +79,22 @@ function createSql(conn: Runner): Sql {
 
 export const sql = createSql(pool);
 
+async function ensureColumn(table: string, column: string, definition: string) {
+  const rows = await sql.unsafe<Array<{ n: number }>>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column],
+  );
+  if (Number(rows[0]?.n)) return;
+  await sql.unsafe(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+}
+
 export async function migrate() {
   const schema = readFileSync(fileURLToPath(new URL("./schema.sql", import.meta.url)), "utf8");
   const statements = schema.split(/;\s*\n/).map((part) => part.trim()).filter(Boolean);
   for (const statement of statements) await sql.unsafe(statement);
+  await ensureColumn("users", "motto", "varchar(80) NULL");
+  await ensureColumn("users", "accent", "varchar(16) NULL");
   // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
   await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
   await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;

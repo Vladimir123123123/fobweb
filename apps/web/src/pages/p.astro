@@ -28,7 +28,7 @@ import Base from "../layouts/Base.astro";
     const sign = diff > 0 ? "+" : "−";
     return `<em class="${diff > 0 ? "up" : "down"}">${sign}${new Intl.NumberFormat("ru-RU").format(Math.abs(diff))}</em>`;
   }
-  function chart(points: Array<{ wardog_level: number | null; created_at?: string }>) {
+  function chart(points: Array<{ wardog_level: number | null; created_at?: string }>, stroke = "#e4b04a") {
     const values = points.map((point) => point.wardog_level ?? 0);
     if (values.length < 2) return `<p class="note">Один снимок. Линия появится после следующего обновления.</p>`;
     const max = Math.max(...values, 1);
@@ -42,10 +42,10 @@ import Base from "../layouts/Base.astro";
     const area = `${line} L${width},${height} L0,${height} Z`;
     const last = values.at(-1) ?? 0;
     return `<svg class="dossier-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Уровень по снимкам">
-      <defs><linearGradient id="lvl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e4b04a" stop-opacity="0.45"/><stop offset="1" stop-color="#e4b04a" stop-opacity="0"/></linearGradient></defs>
+      <defs><linearGradient id="lvl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${stroke}" stop-opacity="0.45"/><stop offset="1" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs>
       <path d="${area}" fill="url(#lvl)"></path>
-      <path d="${line}" fill="none" stroke="#e4b04a" stroke-width="2.5"></path>
-      <circle cx="${width}" cy="${y(last)}" r="4" fill="#e4b04a"></circle>
+      <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2.5"></path>
+      <circle cx="${width}" cy="${y(last)}" r="4" fill="${stroke}"></circle>
     </svg>
     <p class="dossier-axis"><span>${esc(when(points[0]?.created_at))}</span><span>${esc(when(points.at(-1)?.created_at))} · ${num(last)} ур.</span></p>`;
   }
@@ -118,15 +118,13 @@ import Base from "../layouts/Base.astro";
       const placeIndex = listed.findIndex((row) => String(row.steam_id) === id);
       const hidden = Boolean(user.hide_leaderboard) || !user.cis_opt_in;
       const place = placeIndex >= 0 ? `место #${placeIndex + 1}` : hidden ? "скрыт из топа" : "вне топ-200";
-      let squad = profile.squad as { id: number; name: string; tag: string; role?: string; logo?: string; banner?: string } | null;
-      if (squad?.id && !("banner" in (profile.squad as object))) {
-        const card = await fetch(`/api/squads/${squad.id}`).then((response) => response.ok ? response.json() : null).catch(() => null);
-        const art = card?.squad as { logo?: string; banner?: string } | undefined;
-        if (art) squad = { ...squad, logo: art.logo ?? "", banner: art.banner ?? "" };
-      }
+      const squad = profile.squad as { id: number; name: string; tag: string; role?: string; logo?: string } | null;
       const picture = (value: unknown) => /^\/api\/media\/[a-f0-9]{32}\.(jpg|png|webp)$/.test(String(value ?? "")) ? String(value) : "";
-      const banner = picture(squad?.banner);
       const logo = picture(squad?.logo);
+      const accents = ["orange", "gold", "blue", "red", "green"] as const;
+      const accent = accents.find((name) => name === user.accent) ?? "";
+      const marks: Record<string, string> = { orange: "#ff4d1c", gold: "#e4b04a", blue: "#6ea2ff", red: "#ff5a4a", green: "#3dba7a" };
+      const motto = String(user.motto ?? "").trim();
       const syncNote = sync === "same"
         ? "Цифры те же, что уже были. Свежее игра отдаст, если закрыть WARDOGS и снять ещё раз."
         : sync === "game_running"
@@ -143,9 +141,8 @@ import Base from "../layouts/Base.astro";
                 ? "Не вышло снять карьеру. Закрой игру и нажми ещё раз."
                 : "";
       root.innerHTML = `
-        <article class="dossier">
-          <header class="dossier-hero${banner ? " has-banner" : ""}">
-            ${banner ? `<div class="dossier-banner" style="background-image:url('${esc(banner)}')"></div>` : ""}
+        <article class="dossier"${accent ? ` data-accent="${accent}"` : ""}>
+          <header class="dossier-hero">
             <div class="dossier-id">
               <div class="dossier-face">
                 <img class="dossier-avatar" alt="" src="${esc(user.avatar ?? "")}" />
@@ -154,6 +151,7 @@ import Base from "../layouts/Base.astro";
               <div>
                 <p class="eyebrow">Досье · сезон 02</p>
                 <h1>${esc(user.persona ?? user.steam_id)}</h1>
+                ${motto ? `<p class="dossier-line">${esc(motto)}</p>` : ""}
                 <div class="dossier-tags">
                   <span class="pill">${esc(place)}</span>
                   ${primary.level ? `<span class="pill now">${esc(primary.name)} ${primary.level}</span>` : ""}
@@ -195,11 +193,26 @@ import Base from "../layouts/Base.astro";
             <div class="panel">
               <p class="eyebrow">Как рос уровень</p>
               <h2>${history.length > 1 ? (shift(latest?.wardog_level as number | null, history[0]?.wardog_level as number | null) ? `${shift(latest?.wardog_level as number | null, history[0]?.wardog_level as number | null)} с первого снимка` : "Уровень держится") : "Ждём второй снимок"}</h2>
-              ${chart(history as Array<{ wardog_level: number | null; created_at?: string }>)}
+              ${chart(history as Array<{ wardog_level: number | null; created_at?: string }>, marks[accent] ?? "#e4b04a")}
               <p class="note">Последний снимок: ${esc(when(latest?.created_at) || "ещё не было")}. <a href="https://steamcommunity.com/profiles/${id}">Steam</a> · <button class="linkish" id="copy-profile" type="button">Скопировать ссылку</button></p>
             </div>
           </section>
-          ${mine ? `<div class="dossier-own">
+          ${mine ? `<form class="dossier-tune" id="tune">
+            <label>Строка под ником
+              <input id="motto" maxlength="80" value="${esc(motto)}" placeholder="Коротко о себе, до 80 знаков" />
+            </label>
+            <div class="swatches" role="radiogroup" aria-label="Цвет досье">
+              ${[["", "Как есть"], ["orange", "Огонь"], ["gold", "Золото"], ["blue", "Синий"], ["red", "Красный"], ["green", "Зелёный"]].map(([name, label]) => `
+                <label class="swatch">
+                  <input type="radio" name="accent" value="${name}" ${accent === name ? "checked" : ""} />
+                  <i class="dot ${name || "plain"}"></i>
+                  <span>${label}</span>
+                </label>`).join("")}
+            </div>
+            <button class="btn small" type="submit">Сохранить вид</button>
+            <p class="note" id="tune-note">Строку и цвет видят все, кто откроет это досье. Баннер сквада здесь не показывается.</p>
+          </form>
+          <div class="dossier-own">
             <a class="btn small" href="/auth/wardogs/start?next=/p&steamId=${esc(id)}">Снять из игры</a>
             <button class="btn ghost small" id="resync" type="button">Из открытой базы</button>
             <label class="check"><input id="show-top" type="checkbox" ${user.cis_opt_in && !user.hide_leaderboard ? "checked" : ""}/> Показывать в топе</label>
@@ -217,6 +230,26 @@ import Base from "../layouts/Base.astro";
         });
       };
       document.querySelector("#show-top")?.addEventListener("change", save);
+      document.querySelector("#tune")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = document.querySelector("#tune-note")!;
+        const mottoField = document.querySelector<HTMLInputElement>("#motto");
+        const picked = document.querySelector<HTMLInputElement>('input[name="accent"]:checked');
+        const response = await fetch("/api/me", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ motto: mottoField?.value ?? "", accent: picked?.value ?? "" }),
+        });
+        if (response.status === 401) {
+          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          return;
+        }
+        if (!response.ok) {
+          note.textContent = "Не сохранилось. Выбери цвет из списка и укороти строку.";
+          return;
+        }
+        location.reload();
+      });
       document.querySelector("#resync")?.addEventListener("click", async () => {
         const note = document.querySelector("#sync-note")!;
         const button = document.querySelector<HTMLButtonElement>("#resync")!;

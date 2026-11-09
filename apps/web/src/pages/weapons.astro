@@ -32,7 +32,7 @@ const money = (value: number | null) => value === null ? "нет цены" : `$$
   <div class="page-head">
     <div>
       <h1>Оружие</h1>
-      <p class="lead">Основное и пистолеты из файлов билда {catalog.gameBuild}. Цена — минимальная у торговца.</p>
+      <p class="lead">Основное и пистолеты из файлов билда {catalog.gameBuild}. Цена у торговца; если в файлах её нет, берём из базы Tracker. Стартовое оружие стоит $0.</p>
     </div>
     <p class="note" id="shown">Показано {rows.length} из {rows.length}</p>
   </div>

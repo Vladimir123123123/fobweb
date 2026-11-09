@@ -12,6 +12,7 @@ const TABLES = [
   "squads",
   "squad_assets",
   "squad_members",
+  "squad_reports",
   "events",
   "builds",
   "build_votes",
