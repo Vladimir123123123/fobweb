@@ -26,7 +26,7 @@ export const config = {
   trackerKey: (process.env.TRACKER_KEY ?? "").trim(),
   trackerClientId: (process.env.TRACKER_CLIENT_ID ?? "").trim(),
   trackerRedirectUri: ((process.env.TRACKER_REDIRECT_URI ?? "").trim()
-    || (siteOrigin.includes("fob-wd.ru") ? "https://wd-axis.ru/auth/wardogs" : `${siteOrigin}/auth/wardogs`)
+    || `${siteOrigin}/auth/wardogs`
   ).replace(/\/$/, ""),
   discordId: (process.env.DISCORD_CLIENT_ID ?? "").trim(),
   discordSecret: (process.env.DISCORD_CLIENT_SECRET ?? "").trim(),

@@ -65,6 +65,8 @@ export function getStaticPaths() {
       </tbody></table></div>
       <h2>Картинки сквадов</h2>
       <div id="assets">${(data.assets ?? []).map((asset: { id: number; kind: string; path: string; discord_url: string; tag: string; name: string }) => `<article class="panel"><img class="${asset.kind === "logo" ? "asset-preview logo" : "asset-preview"}" src="/api/media/${esc(asset.path)}" alt="" /><p>[${esc(asset.tag)}] ${esc(asset.name)} · ${asset.kind === "logo" ? "логотип" : "баннер"}</p>${asset.discord_url ? `<p>${esc(asset.discord_url)}</p>` : ""}<button class="btn small" data-asset="${asset.id}" data-accept="1" type="button">Одобрить</button> <button class="btn ghost small" data-asset="${asset.id}" data-accept="0" type="button">Отклонить</button></article>`).join("") || "<p>Новых картинок нет.</p>"}</div>
+      <h2>Жалобы на участников</h2>
+      <div id="reports">${(data.reports ?? []).map((report: { id: number; tag: string; name: string; target_name: string | null; target_steam_id: string; reporter_name: string | null; note: string }) => `<p>[${esc(report.tag)}] ${esc(report.name)} · на <a href="/p?id=${report.target_steam_id}">${esc(report.target_name ?? report.target_steam_id)}</a> · от ${esc(report.reporter_name ?? "игрока")}<br>${esc(report.note)} <button class="btn ghost small" data-report="${report.id}" type="button">Закрыть</button></p>`).join("") || "<p>Открытых жалоб нет.</p>"}</div>
       <h2>Сквады</h2>
       <div id="squads">${data.squads.map((squad: { id: number; tag: string; name: string; closed: boolean; status: string; has_banner: boolean; has_logo: boolean; persona: string | null }) => `<p>[${esc(squad.tag)}] ${esc(squad.name)} · ${esc(squad.persona ?? "")} · ${squad.status === "approved" ? "в списке" : squad.status === "rejected" ? "отклонён" : "ждёт проверки"} ${squad.status === "approved" ? `<button class="btn ghost small" data-review="${squad.id}" data-accept="0" type="button">Убрать из списка</button>` : `<button class="btn small" data-review="${squad.id}" data-accept="1" type="button">Одобрить сквад</button>`} ${squad.closed ? "набор закрыт" : `<button class="btn ghost small" data-close="${squad.id}" type="button">Закрыть набор</button>`} ${squad.has_banner ? `<button class="btn ghost small" data-clear="${squad.id}" data-kind="banner" type="button">Снять баннер</button>` : ""} ${squad.has_logo ? `<button class="btn ghost small" data-clear="${squad.id}" data-kind="logo" type="button">Скрыть логотип</button>` : ""}</p>`).join("")}</div>
       <h2>Сборки</h2>
@@ -122,6 +124,12 @@ export function getStaticPaths() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ accept: button.dataset.accept === "1" }),
         });
+        location.reload();
+      });
+    });
+    gate.querySelectorAll<HTMLButtonElement>("[data-report]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await fetch(`/api/admin/reports/${button.dataset.report}/close`, { method: "POST" });
         location.reload();
       });
     });

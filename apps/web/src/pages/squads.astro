@@ -2,15 +2,37 @@
 import Base from "../layouts/Base.astro";
 ---
 <Base title="Сквады — WARDOGS СНГ">
-  <p class="eyebrow">Отряд со Steam</p>
-  <h1>Сквады</h1>
-  <p class="lead">Карточка сквада: логотип, описание, критерии набора, Discord и состав. Вступить может любой, кто вошёл через Steam. Один игрок состоит в одном скваде.</p>
-  <form class="squad-form" id="create">
-    <input id="name" placeholder="Название" maxlength="32" />
-    <input id="tag" placeholder="ТЕГ" maxlength="5" />
-    <textarea id="about" placeholder="Описание: чем занимается сквад" maxlength="700"></textarea>
-    <textarea id="criteria" placeholder="Критерии набора: часы, роли, возраст, язык" maxlength="700"></textarea>
-    <button class="btn" type="submit">Создать</button>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Отряд со Steam</p>
+      <h1>Сквады</h1>
+      <p class="lead">Логотип, описание, критерии набора, Discord и состав. Вступить может любой, кто вошёл через Steam. Один игрок состоит в одном скваде.</p>
+    </div>
+  </div>
+  <form class="squad-create panel" id="create">
+    <div class="squad-create-head">
+      <p class="eyebrow">Новый сквад</p>
+      <h2>Заявка</h2>
+      <p>Карточка уходит на проверку. Тег — 2–5 букв, описание от 20 символов, критерии от 10.</p>
+    </div>
+    <div class="squad-fields">
+      <label>Название
+        <input id="name" maxlength="32" placeholder="Forward Operating Base" required />
+      </label>
+      <label>Тег
+        <input id="tag" maxlength="5" placeholder="FOB" required />
+      </label>
+    </div>
+    <label>Описание
+      <textarea id="about" maxlength="700" placeholder="Чем занимается сквад" required></textarea>
+    </label>
+    <label>Критерии набора
+      <textarea id="criteria" maxlength="700" placeholder="Часы, роли, возраст, язык" required></textarea>
+    </label>
+    <div class="squad-submit">
+      <button class="btn" type="submit">Отправить на проверку</button>
+      <span class="note">Один игрок — один сквад.</span>
+    </div>
   </form>
   <p class="note" id="squad-note"></p>
   <div id="list" class="squad-grid"></div>
@@ -80,11 +102,11 @@ import Base from "../layouts/Base.astro";
       const waitingLogo = leader && owned.pending.some((item) => item.kind === "logo");
       const waitingBanner = leader && owned.pending.some((item) => item.kind === "banner");
       return `
-      <article class="squad-tile">
-        <a class="squad-square" href="/squad?id=${squad.id}">
-          <span class="squad-status ${stateClass(squad.status)}">${stateName(squad.status)}</span>
+      <article class="squad-tile panel">
+        <a class="squad-row" href="/squad?id=${squad.id}">
           <span class="squad-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</span>
           <span class="squad-face">
+            <span class="squad-status ${stateClass(squad.status)}">${stateName(squad.status)}</span>
             <strong>[${esc(squad.tag)}] ${esc(squad.name)}</strong>
             <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")}${squad.closed ? " · набор закрыт" : ""}</p>
           </span>
@@ -95,18 +117,28 @@ import Base from "../layouts/Base.astro";
         </div>
         ${leader ? `
           <form id="profile-form" class="squad-form squad-edit" hidden>
-            <input id="profile-name" maxlength="32" value="${esc(owned.name)}" />
-            <input id="profile-tag" maxlength="5" value="${esc(owned.tag)}" />
+            <div class="squad-fields">
+              <label>Название<input id="profile-name" maxlength="32" value="${esc(owned.name)}" /></label>
+              <label>Тег<input id="profile-tag" maxlength="5" value="${esc(owned.tag)}" /></label>
+            </div>
             <label>Описание<textarea id="profile-about" maxlength="700">${esc(owned.about ?? "")}</textarea></label>
             <label>Критерии набора<textarea id="profile-criteria" maxlength="700">${esc(owned.criteria ?? "")}</textarea></label>
             <label>Discord<input id="profile-discord" placeholder="https://discord.gg/..." value="${esc(owned.discord_url)}" /></label>
             <label class="check"><input id="profile-closed" type="checkbox" ${owned.closed ? "checked" : ""}/> Набор закрыт</label>
-            <button class="btn small" type="submit">Сохранить карточку</button>
+            <div class="squad-assets">
+              <div>
+                <label>Логотип<input id="logo-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+                <button class="btn ghost small" id="logo-send" type="button">Отправить логотип</button>
+              </div>
+              <div>
+                <label>Баннер<input id="banner-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+                <button class="btn ghost small" id="banner-send" type="button">Отправить баннер</button>
+              </div>
+            </div>
             <p class="note">${waitingLogo ? "Новый логотип на модерации. " : ""}${waitingBanner ? "Новый баннер на модерации." : ""}</p>
-            <label>Логотип<input id="logo-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
-            <button class="btn ghost small" id="logo-send" type="button">Отправить логотип</button>
-            <label>Баннер<input id="banner-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
-            <button class="btn ghost small" id="banner-send" type="button">Отправить баннер</button>
+            <div class="squad-submit">
+              <button class="btn small" type="submit">Сохранить карточку</button>
+            </div>
           </form>` : ""}
       </article>`;
     }).join("") || "<p>Сквадов пока нет.</p>";

@@ -1,27 +1,200 @@
 ---
 import Base from "../layouts/Base.astro";
 import catalog from "../data/catalog.json";
+
+type Vehicle = {
+  id: string;
+  name: string;
+  speed: number | null;
+  seats: number | null;
+  health: number | null;
+  weapons: string[];
+  icon?: string;
+};
+
+const labels = {
+  air: "Вертолёт",
+  wheel: "Колёсная",
+  track: "Гусеничная",
+} as const;
+
+function family(id: string) {
+  if (id.includes(".Air.")) return "air" as const;
+  if (id.includes(".Tracked.")) return "track" as const;
+  return "wheel" as const;
+}
+
+function pace(value: number | null) {
+  if (value === null) return "—";
+  return String(Math.round(value));
+}
+
+const paints: Record<string, Array<{ file: string; label: string; tone: string }>> = {
+  "Vehicle.Variant.Land.Wheeled.Bobcat.Default": [{ file: "twotonedesert-bobcat.webp", label: "Песок", tone: "sand" }],
+  "Vehicle.Variant.Land.Wheeled.DuneBuggy.Default": [{ file: "twotonedesert-dunebuggy.webp", label: "Песок", tone: "sand" }],
+  "Vehicle.Variant.Air.Rotary.Havoc.Default": [{ file: "twotonedesert-havoc.webp", label: "Песок", tone: "sand" }],
+  "Vehicle.Variant.Land.Wheeled.Humvee.Default": [{ file: "twotonedesert-humvee.webp", label: "Песок", tone: "sand" }],
+  "Vehicle.Variant.Air.Rotary.Littlebird.Default": [
+    { file: "twotonedesert-littlebird.webp", label: "Песок", tone: "sand" },
+    { file: "taxi-littlebird.webp", label: "Такси", tone: "taxi" },
+    { file: "blackandgold-littlebird.webp", label: "Золото", tone: "gold" },
+  ],
+};
+
+const vehicles = (catalog.vehicles as Vehicle[]).map((vehicle) => ({
+  ...vehicle,
+  family: family(vehicle.id),
+  paints: paints[vehicle.id] ?? [],
+}));
+const counts = {
+  air: vehicles.filter((vehicle) => vehicle.family === "air").length,
+  wheel: vehicles.filter((vehicle) => vehicle.family === "wheel").length,
+  track: vehicles.filter((vehicle) => vehicle.family === "track").length,
+};
 ---
-<Base title="Техника — WARDOGS СНГ">
-  <p class="eyebrow">Из файлов игры</p>
-  <h1>Техника</h1>
-  <p class="lead">Скорость, места и прочность. Это карточки техники, не цены магазина.</p>
-  <div class="scroll">
-    <table>
-      <thead>
-        <tr><th>Машина</th><th>Скорость</th><th>Места</th><th>Прочность</th><th>Вооружение</th></tr>
-      </thead>
-      <tbody>
-        {catalog.vehicles.map((vehicle) => (
-          <tr>
-            <td>{vehicle.name}</td>
-            <td>{vehicle.speed ?? "—"}</td>
-            <td>{vehicle.seats ?? "—"}</td>
-            <td>{vehicle.health ?? "—"}</td>
-            <td>{vehicle.weapons.join(", ") || "—"}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+<Base title="Техника — WARDOGS СНГ" description="Техника из файлов игры: скорость, места, прочность и вооружение.">
+  <section class="bay" id="bay">
+    <div class="bay-copy">
+      <p class="eyebrow" id="bay-kind">Техника</p>
+      <h1 id="bay-name">Масштаб имеет значение.</h1>
+      <p class="lead" id="bay-guns"></p>
+    </div>
+    <div class="bay-pic"><img id="bay-img" alt="" /></div>
+    <div class="bay-stats" id="bay-stats"></div>
+  </section>
+  <div class="page-head">
+    <div>
+      <h1>Техника</h1>
+      <p class="lead">Карточки из файлов билда {catalog.gameBuild}. Справа на картинке — камуфляж, если он есть у этой машины.</p>
+    </div>
+    <p class="note" id="shown">Показано {vehicles.length} из {vehicles.length}</p>
+  </div>
+  <div class="yard-tools">
+    <input id="vehicle-q" placeholder="Поиск: Humvee, танк..." />
+    <div class="yard-tabs">
+      <button class="on" type="button" data-kind="">Все <span>{vehicles.length}</span></button>
+      <button type="button" data-kind="air">Вертолёты <span>{counts.air}</span></button>
+      <button type="button" data-kind="wheel">Колёсные <span>{counts.wheel}</span></button>
+      <button type="button" data-kind="track">Гусеничные <span>{counts.track}</span></button>
+    </div>
+  </div>
+  <div class="yard-grid" id="vehicle-rows">
+    {vehicles.map((vehicle) => (
+      <article
+        class="rig"
+        data-kind={vehicle.family}
+        data-name={vehicle.name}
+        data-label={labels[vehicle.family]}
+        data-speed={pace(vehicle.speed)}
+        data-seats={vehicle.seats ?? "—"}
+        data-health={vehicle.health ?? "—"}
+        data-icon={vehicle.icon ? `/art/${vehicle.icon}` : ""}
+        data-guns={vehicle.weapons.join(" · ")}
+        data-q={`${vehicle.name} ${labels[vehicle.family]} ${vehicle.weapons.join(" ")}`.toLowerCase()}
+      >
+        <div class="rig-pic">
+          {vehicle.icon ? <img class="rig-shot" src={`/art/${vehicle.icon}`} alt="" decoding="async" /> : <span>{labels[vehicle.family]}</span>}
+          {vehicle.paints.length ? (
+            <div class="rig-camos">
+              {vehicle.paints.map((paint) => (
+                <button class={`camo ${paint.tone}`} type="button" title={paint.label} aria-label={paint.label} aria-pressed="false" data-src={`/art/${paint.file}`}></button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div class="rig-body">
+          <p class="eyebrow">{labels[vehicle.family]}</p>
+          <h2>{vehicle.name}</h2>
+          <div class="rig-stats">
+            <div><span>Скорость</span><b>{pace(vehicle.speed)}</b></div>
+            <div><span>Места</span><b>{vehicle.seats ?? "—"}</b></div>
+            <div><span>Прочность</span><b>{vehicle.health ?? "—"}</b></div>
+          </div>
+          <p class="rig-guns">
+            {vehicle.weapons.length ? vehicle.weapons.map((weapon) => <span>{weapon}</span>) : <span class="quiet">без вооружения</span>}
+          </p>
+        </div>
+      </article>
+    ))}
   </div>
 </Base>
+<script>
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>(".yard-tabs button")];
+  const rows = [...document.querySelectorAll<HTMLElement>(".rig")];
+  const input = document.querySelector<HTMLInputElement>("#vehicle-q")!;
+  const shown = document.querySelector("#shown")!;
+  let kind = "";
+  function apply() {
+    const query = input.value.trim().toLowerCase();
+    let visible = 0;
+    for (const row of rows) {
+      const ok = (!kind || row.dataset.kind === kind) && (row.dataset.q ?? "").includes(query);
+      row.hidden = !ok;
+      if (ok) visible += 1;
+    }
+    shown.textContent = `Показано ${visible} из ${rows.length}`;
+    for (const button of buttons) button.classList.toggle("on", (button.dataset.kind ?? "") === kind);
+  }
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      kind = button.dataset.kind ?? "";
+      apply();
+      featureVisible();
+    });
+  }
+  const bayName = document.querySelector("#bay-name")!;
+  const bayKind = document.querySelector("#bay-kind")!;
+  const bayGuns = document.querySelector("#bay-guns")!;
+  const bayImg = document.querySelector<HTMLImageElement>("#bay-img")!;
+  const bayStats = document.querySelector("#bay-stats")!;
+  function feature(row: HTMLElement) {
+    rows.forEach((item) => item.classList.toggle("is-on", item === row));
+    bayName.textContent = row.dataset.name ?? "";
+    bayKind.textContent = row.dataset.label ?? "";
+    bayGuns.textContent = row.dataset.guns || "Без стационарного вооружения.";
+    bayImg.src = row.dataset.icon ?? "";
+    bayImg.hidden = !row.dataset.icon;
+    bayStats.innerHTML = [
+      ["Скорость", row.dataset.speed],
+      ["Места", row.dataset.seats],
+      ["Прочность", row.dataset.health],
+    ].map(([label, value]) => `<div><b>${value}</b><span>${label}</span></div>`).join("");
+  }
+  function featureVisible() {
+    const current = rows.find((row) => row.classList.contains("is-on") && !row.hidden);
+    feature(current ?? rows.find((row) => !row.hidden) ?? rows[0]);
+  }
+  rows.forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest(".rig-camos")) return;
+      feature(row);
+    });
+  });
+  const first = apply;
+  input.addEventListener("input", () => {
+    first();
+    featureVisible();
+  });
+  feature(rows.find((row) => row.dataset.kind === "track") ?? rows[0]);
+  document.querySelectorAll(".rig-camos").forEach((bar) => {
+    const shot = bar.parentElement?.querySelector<HTMLImageElement>(".rig-shot");
+    if (!shot) return;
+    const stock = shot.getAttribute("src") ?? "";
+    bar.addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest("button");
+      if (!button) return;
+      const selected = button.classList.contains("on");
+      bar.querySelectorAll("button").forEach((item) => {
+        item.classList.remove("on");
+        item.setAttribute("aria-pressed", "false");
+      });
+      shot.src = selected ? stock : button.dataset.src ?? stock;
+      const card = bar.closest<HTMLElement>(".rig");
+      if (card?.classList.contains("is-on")) bayImg.src = shot.src;
+      if (!selected) {
+        button.classList.add("on");
+        button.setAttribute("aria-pressed", "true");
+      }
+    });
+  });
+</script>

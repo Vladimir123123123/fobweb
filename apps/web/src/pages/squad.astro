@@ -11,7 +11,10 @@ import Base from "../layouts/Base.astro";
   if (!/^\d+$/.test(id)) {
     root.innerHTML = "<h1>Такой страницы нет</h1>";
   } else {
-    const response = await fetch(`/api/squads/${id}`);
+    const [response, me] = await Promise.all([
+      fetch(`/api/squads/${id}`),
+      fetch("/api/me").then((item) => item.json()).catch(() => ({ user: null })),
+    ]);
     if (!response.ok) {
       root.innerHTML = "<h1>Сквада нет</h1><p>Его не опубликовали или он ещё на проверке.</p>";
     } else {
@@ -20,32 +23,64 @@ import Base from "../layouts/Base.astro";
       const members = data.members as Array<{ steam_id: string; role: string; status: string; persona: string | null; avatar: string | null }>;
       const here = data.seat && String(data.seat.squad_id) === id;
       const elsewhere = Boolean(data.seat) && !here;
+      const mine = me.user?.steam_id ? String(me.user.steam_id) : "";
+      const roleName = (member: { role: string; status: string }) => member.role === "leader" ? "лидер" : member.status === "pending" ? "заявка" : "в составе";
       const roster = members.map((member) => `
-        <a href="/p?id=${member.steam_id}">
-          ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="squad-mark" style="width:36px;height:36px;font-size:12px">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
-          <span>${esc(member.persona ?? member.steam_id)} · ${member.role === "leader" ? "лидер" : member.status === "pending" ? "заявка" : "в составе"}</span>
-        </a>`).join("");
+        <article class="mate${member.role === "leader" ? " lead" : ""}">
+          <a href="/p?id=${member.steam_id}">
+            ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="mate-fallback">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
+            <span>
+              <strong>${esc(member.persona ?? member.steam_id)}</strong>
+              <small>${roleName(member)}</small>
+            </span>
+          </a>
+          ${member.steam_id === mine ? "" : `<button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>`}
+        </article>`).join("");
+      const state = squad.status === "approved" ? "Одобрено" : squad.status === "rejected" ? "Отклонён" : "На модерации";
+      const stateClass = squad.status === "approved" ? "approved" : squad.status === "rejected" ? "rejected" : "pending";
       root.innerHTML = `
         <p class="eyebrow"><a href="/squads">Сквады</a></p>
-        ${squad.banner ? `<img class="squad-banner" src="${esc(squad.banner)}" alt="" />` : ""}
-        <div class="squad-card open panel">
-          <div class="squad-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</div>
-          <div>
-            <h2>[${esc(squad.tag)}] ${esc(squad.name)}</h2>
-            <p><span class="squad-status ${squad.status === "approved" ? "approved" : squad.status === "rejected" ? "rejected" : "pending"}" style="position:static">${squad.status === "approved" ? "Одобрено" : squad.status === "rejected" ? "Отклонён" : "На модерации"}</span></p>
-            <p>${squad.members} в составе · <a href="/p?id=${squad.owner_steam_id}">${esc(squad.owner_name ?? "владелец")}</a>${squad.closed ? " · набор закрыт" : ""}</p>
-            <span class="squad-label">Описание</span>
-            <p class="squad-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>
-            <span class="squad-label">Критерии набора</span>
-            <p class="squad-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
-            <div class="squad-actions">
-              ${squad.discord_url ? `<a class="btn small" href="${esc(squad.discord_url)}">Discord сквада</a>` : ""}
-              ${here ? `<span class="note">Вы в составе.</span>` : elsewhere ? `<span class="note">Вы уже состоите в скваде.</span>` : squad.closed ? `<span class="note">Набор закрыт.</span>` : `<button class="btn small" id="join" type="button">Вступить</button>`}
+        <article class="hall${squad.banner ? " has-banner" : ""}">
+          <header class="hall-hero">
+            ${squad.banner ? `<div class="hall-banner" style="background-image:url('${esc(squad.banner)}')"></div>` : ""}
+            <div class="hall-id">
+              <div class="hall-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</div>
+              <div>
+                <h1>[${esc(squad.tag)}] ${esc(squad.name)}</h1>
+                <div class="dossier-tags">
+                  <span class="squad-status ${stateClass}">${state}</span>
+                  <span class="pill">${squad.members} в составе</span>
+                  <a class="pill" href="/p?id=${squad.owner_steam_id}">${esc(squad.owner_name ?? "владелец")}</a>
+                  ${squad.closed ? `<span class="pill old">набор закрыт</span>` : `<span class="pill now">набор открыт</span>`}
+                </div>
+              </div>
             </div>
+          </header>
+          <section class="hall-split">
+            <div>
+              <p class="eyebrow">Описание</p>
+              <p class="hall-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>
+            </div>
+            <div>
+              <p class="eyebrow">Критерии набора</p>
+              <p class="hall-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
+            </div>
+          </section>
+          <div class="hall-actions">
+            ${squad.discord_url ? `<a class="btn small" href="${esc(squad.discord_url)}">Discord сквада</a>` : ""}
+            ${here ? `<span class="note">Вы в составе.</span>` : elsewhere ? `<span class="note">Вы уже состоите в скваде.</span>` : squad.closed ? `<span class="note">Набор закрыт.</span>` : `<button class="btn small" id="join" type="button">Вступить</button>`}
           </div>
+        </article>
+        <div class="hall-head">
+          <h2>Состав</h2>
+          <p class="note">${(() => { const n = members.length; const mod10 = n % 10; const mod100 = n % 100; const word = mod10 === 1 && mod100 !== 11 ? "человек" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "человека" : "человек"; return `${n} ${word}`; })()}</p>
         </div>
-        <h2>Состав</h2>
-        <div class="squad-roster">${roster || "<p>В составе пока никого.</p>"}</div>
+        <div class="hall-roster">${roster || "<p>В составе пока никого.</p>"}</div>
+        <form id="report-form" class="report" hidden>
+          <p>Жалоба на <strong id="report-who"></strong></p>
+          <textarea id="report-note" maxlength="400" placeholder="Что человек сделал. Минимум 10 символов."></textarea>
+          <button class="btn small" type="submit">Отправить</button>
+        </form>
         <p class="note" id="squad-note"></p>
       `;
       document.querySelector("#join")?.addEventListener("click", async () => {
@@ -61,6 +96,44 @@ import Base from "../layouts/Base.astro";
               ? "Вы уже состоите в скваде."
               : "Сейчас вступить не получилось.";
         if (join.ok) location.reload();
+      });
+      const reportForm = document.querySelector<HTMLFormElement>("#report-form");
+      let reportTarget = "";
+      document.querySelectorAll<HTMLButtonElement>(".mate-report").forEach((button) => {
+        button.addEventListener("click", () => {
+          reportTarget = button.dataset.steam ?? "";
+          const who = document.querySelector("#report-who");
+          if (who) who.textContent = button.dataset.name ?? "";
+          reportForm?.removeAttribute("hidden");
+          document.querySelector<HTMLTextAreaElement>("#report-note")?.focus();
+        });
+      });
+      reportForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = document.querySelector("#squad-note")!;
+        const text = document.querySelector<HTMLTextAreaElement>("#report-note")?.value.trim() ?? "";
+        if (text.length < 10) {
+          note.textContent = "Нужно хотя бы 10 символов, что именно случилось.";
+          return;
+        }
+        const sent = await fetch(`/api/squads/${id}/report`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ steamId: reportTarget, note: text }),
+        });
+        const body = await sent.json().catch(() => ({}));
+        if (sent.status === 401) {
+          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          return;
+        }
+        note.textContent = sent.ok
+          ? "Жалоба отправлена. Её увидит администрация сайта."
+          : body.error === "duplicate"
+            ? "На этого человека вы уже жаловались на этой неделе."
+            : body.error === "self"
+              ? "На себя жалобу отправить нельзя."
+              : "Нужно хотя бы 10 символов, что именно случилось.";
+        if (sent.ok) reportForm.setAttribute("hidden", "");
       });
     }
   }

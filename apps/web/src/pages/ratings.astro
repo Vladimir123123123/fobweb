@@ -25,6 +25,15 @@ import Base from "../layouts/Base.astro";
     <label>Поиск<input id="q" placeholder="Ник" /></label>
     <button class="btn" id="me" type="button">Показать меня</button>
   </div>
+  <p class="rank-key">
+    <span><i class="r1"></i>1</span>
+    <span><i class="r5"></i>2–5</span>
+    <span><i class="r10"></i>6–10</span>
+    <span><i class="r25"></i>11–25</span>
+    <span><i class="r50"></i>26–50</span>
+    <span><i class="r100"></i>51–100</span>
+    <span><i class="r200"></i>101–200</span>
+  </p>
   <p class="note" id="rating-note"></p>
   <div class="scroll panel">
     <table class="ratings">
@@ -67,19 +76,27 @@ import Base from "../layouts/Base.astro";
     const syncNote = sync === "wait"
       ? "Обновляем статистику. Не закрывай вкладку."
       : sync === "game_running"
-        ? "Закрой WARDOGS и в профиле нажми «Обновить статистику»."
+        ? "Закрой WARDOGS и в профиле нажми «Обновить через Steam»."
         : sync === "access_denied"
           ? "Вход отменён."
           : sync === "expired"
             ? "Вход не завершился. Нажми «Войти через Steam» ещё раз."
             : sync
-              ? "Цифры не пришли. Открой свой профиль и нажми «Обновить статистику»."
+              ? "Цифры не пришли. Открой свой профиль и нажми «Обновить через Steam»."
               : "";
     note.textContent = syncNote || `Сезон ${data.season}. Строк: ${data.players.length}.`;
-    rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => `
+    const tierOf = (place: number) => place === 1 ? "r1" : place <= 5 ? "r5" : place <= 10 ? "r10" : place <= 25 ? "r25" : place <= 50 ? "r50" : place <= 100 ? "r100" : "r200";
+    const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+    const ranked = q.value.trim() === "";
+    rows.innerHTML = data.players.map((player: Record<string, string | number | null>, index: number) => {
+      const place = index + 1;
+      const name = String(player.persona ?? player.steam_id);
+      const portrait = typeof player.avatar === "string" && player.avatar.startsWith("https://") ? player.avatar : "";
+      const tier = ranked ? tierOf(place) : "";
+      return `
       <tr id="p-${player.steam_id}">
-        <td>${index + 1}</td>
-        <td><a href="/p?id=${player.steam_id}">${player.persona ?? player.steam_id}</a></td>
+        <td>${place}</td>
+        <td><a class="who ${tier}" href="/p?id=${player.steam_id}"><span class="ring">${portrait ? `<img src="${esc(portrait)}" alt="" />` : `<span>${esc(name.slice(0, 1))}</span>`}</span>${esc(name)}</a></td>
         <td>${player.wardog_level ?? "—"}</td>
         <td>${player.xp ?? "—"}</td>
         <td>${money(player.account_value as number | null)}</td>
@@ -92,8 +109,8 @@ import Base from "../layouts/Base.astro";
         <td>${player.role_support ?? "—"}</td>
         <td>${player.role_driver ?? "—"}</td>
         <td>${player.role_pilot ?? "—"}</td>
-      </tr>
-    `).join("") || `<tr><td colspan="14">Пока нет снимков. Топ заполнится после синхронизации вошедших игроков.</td></tr>`;
+      </tr>`;
+    }).join("") || `<tr><td colspan="14">Пока нет снимков. Топ заполнится после синхронизации вошедших игроков.</td></tr>`;
   }
   sort.addEventListener("change", load);
   q.addEventListener("change", load);

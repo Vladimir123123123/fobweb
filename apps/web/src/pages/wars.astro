@@ -1,0 +1,53 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Клановые войны — WARDOGS СНГ" description="Отдельный рейтинг игр клан на клан. Пока это пример приглашения." robots="noindex, nofollow">
+  <p class="eyebrow">Клан на клан</p>
+  <h1>Клановые войны</h1>
+  <p class="lead">Сюда попадут только игры клан на клан. Общий рейтинг сезона остаётся на своей странице. Ниже — как будет выглядеть приглашение.</p>
+  <article class="war-invite" id="war-invite">
+    <p class="eyebrow">Пример</p>
+    <div class="war-clan">
+      <div class="war-mark" id="war-mark">FOB</div>
+      <div>
+        <h2 id="war-title">[FOB] приглашает на клановые игры</h2>
+        <p>Объявление клана. Сыгранных войн и отдельного рейтинга пока нет.</p>
+      </div>
+    </div>
+    <div class="row" id="war-actions">
+      <a class="btn small" id="war-squad" href="/squads">Страница клана</a>
+    </div>
+  </article>
+</Base>
+<script>
+  const mark = document.querySelector("#war-mark");
+  const title = document.querySelector("#war-title");
+  const squadLink = document.querySelector<HTMLAnchorElement>("#war-squad");
+  const actions = document.querySelector("#war-actions");
+  const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  try {
+    const response = await fetch("/api/squads");
+    if (!response.ok || !mark || !title || !squadLink || !actions) throw new Error("squads");
+    const data = await response.json();
+    const squad = (data.squads ?? []).find((item: { tag?: string }) => String(item.tag ?? "").toUpperCase() === "FOB");
+    if (!squad) throw new Error("fob");
+    const name = String(squad.name ?? "Forward Operating Base");
+    const tag = String(squad.tag ?? "FOB");
+    title.textContent = `[${tag}] ${name} приглашает на клановые игры`;
+    squadLink.href = `/squad/?id=${squad.id}`;
+    const logo = typeof squad.logo === "string" && /^\/api\/media\/[a-f0-9]{32}\.(jpg|png|webp)$/.test(squad.logo) ? squad.logo : "";
+    if (logo) mark.innerHTML = `<img src="${esc(logo)}" alt="" />`;
+    const discord = typeof squad.discord_url === "string" && squad.discord_url.startsWith("https://discord.gg/") ? squad.discord_url : "";
+    if (discord) {
+      const link = document.createElement("a");
+      link.className = "btn ghost small";
+      link.href = discord;
+      link.textContent = "Discord клана";
+      link.target = "_blank";
+      link.rel = "noopener";
+      actions.append(link);
+    }
+  } catch {
+    /* остаётся пример с тегом FOB */
+  }
+</script>

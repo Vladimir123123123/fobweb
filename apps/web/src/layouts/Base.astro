@@ -33,14 +33,14 @@ const path = Astro.url.pathname;
   <body class={fit ? "fit" : undefined} data-metrika={metrika}>
     <header class="topbar">
       <div class="wrap top">
-        <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" />WARDOGS <em>СНГ</em></a>
+        <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" /><span>FOB<small>WARDOGS · СНГ</small></span></a>
         <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button>
         <nav class="nav" id="site-nav">
-          <a href="/calculator" aria-current={path.startsWith("/calculator") ? "page" : undefined}>Калькулятор</a>
           <a href="/builds" aria-current={path.startsWith("/builds") || path === "/b" ? "page" : undefined}>Сборки</a>
           <a href="/weapons" aria-current={path.startsWith("/weapons") ? "page" : undefined}>Оружие</a>
           <a href="/vehicles" aria-current={path.startsWith("/vehicles") ? "page" : undefined}>Техника</a>
           <a href="/ratings" aria-current={path.startsWith("/ratings") ? "page" : undefined}>Рейтинг</a>
+          <a href="/guides" aria-current={path.startsWith("/guides") ? "page" : undefined}>Гайды</a>
           <a href="/squads" aria-current={path.startsWith("/squad") ? "page" : undefined}>Сквады</a>
           <div class="account">
             <a class="btn small" href="/discord">В Discord</a>

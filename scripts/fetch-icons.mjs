@@ -9,6 +9,10 @@ const pattern = /\\"id\\":\\"(Id\.(?:Item|Vehicle)\.[A-Za-z0-9_.]+)\\"((?:(?!\\"
 const icons = {};
 for (const match of html.matchAll(pattern)) icons[match[1]] = `${match[3]}.webp`;
 
+const vehiclesPage = await (await fetch("https://wardogs.tools/database/vehicles")).text();
+const vehiclePattern = /\\"icon\\":\\"https:\/\/cdn\.pixel6\.tools\/wardogs\/images\/icons\/([a-z0-9_]+)\.webp(?:\?v=\d+)?\\"[\s\S]{0,900}?\\"entityId\\":\\"(Vehicle\.Variant\.[A-Za-z0-9_.]+)\\"/g;
+for (const match of vehiclesPage.matchAll(vehiclePattern)) icons[match[2]] = `${match[1]}.webp`;
+
 const catalogPath = new URL("../apps/web/src/data/catalog.json", import.meta.url);
 const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
 const needed = new Set();
