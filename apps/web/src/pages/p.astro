@@ -149,7 +149,7 @@ import Base from "../layouts/Base.astro";
                 ${logo ? `<img class="dossier-clan" alt="" src="${esc(logo)}" />` : ""}
               </div>
               <div>
-                <p class="eyebrow">Досье · сезон 02</p>
+                <p class="eyebrow">Досье · сезон ${esc(String(board?.season || "03"))}</p>
                 <h1>${esc(user.persona ?? user.steam_id)}</h1>
                 ${motto ? `<p class="dossier-line">${esc(motto)}</p>` : ""}
                 <div class="dossier-tags">

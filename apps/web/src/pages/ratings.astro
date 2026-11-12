@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 ---
 <Base title="Рейтинг СНГ — WARDOGS СНГ" wide>
   <header class="ladder-head">
-    <p class="eyebrow">Сезон 02</p>
+    <p class="eyebrow" id="season-label">Сезон 03</p>
     <h1>Рейтинг</h1>
     <p class="lead">Кто вошёл через Steam и не скрыл профиль. Цифры — последний снимок карьеры.</p>
   </header>
@@ -95,6 +95,8 @@ import Base from "../layouts/Base.astro";
             : sync
               ? "Цифры не пришли. Открой свой профиль и нажми «Снять из игры»."
               : "";
+    const seasonLabel = document.querySelector("#season-label");
+    if (seasonLabel && data.season) seasonLabel.textContent = `Сезон ${data.season}`;
     note.textContent = syncNote || `Сезон ${data.season}. В списке ${data.players.length}.`;
     const ranked = q.value.trim() === "";
     const hot = columns[sort.value] ?? 3;
