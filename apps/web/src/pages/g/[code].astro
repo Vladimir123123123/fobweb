@@ -47,6 +47,10 @@ export function getStaticPaths() {
         <div class="stat"><b>${data.shares7d}</b><span>Ссылки сборок, 7 дней</span></div>
       </div>
       <p class="note">Входы за 7 дней: ${data.logins7d}. Клики по баннерам сквадов: ${data.squadBannerClicks7d ?? 0}. Сессии синка: живые ${count("active")}, погасшие ${count("expired")}.</p>
+      <h2>Топ сезона ${esc(String(data.season ?? ""))}</h2>
+      <p class="note">В этом сезоне снимков: ${data.seasonPlayers ?? 0}. Кнопка стирает только текущий сезон. Сезон 2 остаётся.</p>
+      <button class="btn" id="reset-season" type="button">Обнулить топ сезона</button>
+      <p id="reset-note" class="note"></p>
       <h2>Откуда пришли</h2>
       <div class="scroll"><table><tbody>
         ${data.sources.map((row: { source: string; count: number }) => `<tr><td>${row.source}</td><td>${row.count}</td></tr>`).join("")}
@@ -75,6 +79,26 @@ export function getStaticPaths() {
       <button class="btn" id="invite" type="button">Выдать ссылку на 48 часов</button>
       <p id="invite-url"></p>
     `;
+    gate.querySelector("#reset-season")?.addEventListener("click", async () => {
+      if (!confirm(`Обнулить топ сезона ${data.season}? Снимки сезона 2 не удаляются.`)) return;
+      const typed = prompt("Для подтверждения напишите ОБНУЛИТЬ");
+      if (typed !== "ОБНУЛИТЬ") return;
+      const response = await fetch("/api/admin/season/reset", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirm: "ОБНУЛИТЬ" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      const note = gate.querySelector("#reset-note");
+      if (!response.ok) {
+        if (note) note.textContent = payload.error === "season_locked"
+          ? "Сезон 2 не обнуляется. На сервере API в GAME_SEASON должен быть 03, затем перезапуск Node."
+          : "Не вышло.";
+        return;
+      }
+      if (note) note.textContent = `Снято снимков: ${payload.removed}. Сезон ${payload.season}.`;
+      location.reload();
+    });
     gate.querySelector("#invite")?.addEventListener("click", async () => {
       const response = await fetch("/api/admin/invites", { method: "POST" });
       const payload = await response.json();

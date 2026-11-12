@@ -883,13 +883,13 @@ app.get("/api/ratings", async (request) => {
   const season = text(query.season, 20) || config.season;
   const q = text(query.q, 40).replace(/[%_]/g, "");
   if (!/^[a-z_]+$/.test(column)) return { season, sort, players: [] };
-  // Все, кто не скрыт: со снимком или без (цифры — когда появятся).
+  // В топе сезона только те, у кого есть снимок этого сезона.
   const rows = await sql.unsafe(
     `SELECT u.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
             s.created_at, u.persona, u.avatar, u.country
      FROM users u
-     LEFT JOIN (
+     JOIN (
        SELECT s.*
        FROM snapshots s
        JOIN (
@@ -1000,7 +1000,7 @@ app.get("/api/bot/board", async (request, reply) => {
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
             s.created_at, u.persona, u.avatar, u.country, u.discord_id, u.discord_name
      FROM users u
-     LEFT JOIN (
+     JOIN (
        SELECT s.*
        FROM snapshots s
        JOIN (
@@ -1620,6 +1620,11 @@ app.get("/api/admin/overview", async (request, reply) => {
   const sync = await sql<{ status: string; count: number }[]>`
     SELECT status, CAST(COUNT(*) AS SIGNED) AS count FROM sync_sessions GROUP BY status
   `;
+  const [seasonBoard] = await sql<{ count: number }[]>`
+    SELECT CAST(COUNT(DISTINCT steam_id) AS SIGNED) AS count
+    FROM snapshots
+    WHERE season = ${config.season}
+  `;
   const byName = Object.fromEntries(counts.map((row) => [row.name, row.count]));
   return {
     liveCis: live?.count ?? 0,
@@ -1638,7 +1643,24 @@ app.get("/api/admin/overview", async (request, reply) => {
     builds,
     sync,
     gate: `/g/${config.adminPath}`,
+    season: config.season,
+    seasonPlayers: seasonBoard?.count ?? 0,
   };
+});
+
+app.post("/api/admin/season/reset", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  if (!(await isAdmin(steamId))) return notFound(reply);
+  if (text(asObject(request.body)?.confirm, 40) !== "ОБНУЛИТЬ") {
+    return reply.code(400).send({ error: "confirm" });
+  }
+  if (config.season === "02") {
+    return reply.code(409).send({ error: "season_locked", season: config.season });
+  }
+  const removed = await sql<{ affected?: number }[]>`
+    DELETE FROM snapshots WHERE season = ${config.season}
+  `;
+  return { ok: true, season: config.season, removed: removed[0]?.affected ?? 0 };
 });
 
 app.post("/api/admin/invites", async (request, reply) => {

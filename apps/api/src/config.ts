@@ -20,7 +20,7 @@ export const config = {
   adminPath: process.env.ADMIN_PATH || "local-staff-gate",
   ownerSteamId: (process.env.OWNER_STEAM_ID ?? "").trim(),
   steamKey: (process.env.STEAM_WEB_API_KEY ?? "").trim(),
-  season: process.env.GAME_SEASON || "02",
+  season: process.env.GAME_SEASON || "03",
   syncKey: (process.env.SYNC_INGEST_KEY ?? "").trim(),
   botKey: (process.env.BOT_API_KEY ?? process.env.SYNC_INGEST_KEY ?? "").trim(),
   trackerKey: (process.env.TRACKER_KEY ?? "").trim(),

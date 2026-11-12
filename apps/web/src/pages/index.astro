@@ -1,6 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
-const season = import.meta.env.GAME_SEASON ?? "02";
+const season = import.meta.env.GAME_SEASON ?? "03";
 ---
 <Base title="WARDOGS СНГ">
   <section class="stage">
@@ -15,4 +15,85 @@ const season = import.meta.env.GAME_SEASON ?? "02";
       </div>
     </div>
   </section>
+  <section class="wrap season-lock">
+    <div>
+      <p class="eyebrow">Сезон 2 · навсегда</p>
+      <h2>Трое лучших</h2>
+      <p class="lead">Запись карьеры на fob-wd.ru. Роль «Лучший · сезон 2» с тех, кто её получил, не снимается.</p>
+      <div class="podium" id="hall" data-n="3">
+        <a class="pod pod-2" href="/p?id=76561198267712279">
+          <b>2</b><strong>MATbE_Бал</strong><small>уровень 173</small>
+        </a>
+        <a class="pod pod-1" href="/p?id=76561198011471623">
+          <b>1</b><strong>ReneGADe #Quakenet.org</strong><small>уровень 184</small>
+        </a>
+        <a class="pod pod-3" href="/p?id=76561198383144234">
+          <b>3</b><strong>[[[_WAR_]]]</strong><small>уровень 165</small>
+        </a>
+      </div>
+      <p class="note" id="maint">Техработы в игре 12 ноября, 16:00–18:00 МСК.</p>
+    </div>
+    <div>
+      <p class="eyebrow">Лимитед · 50 на 50</p>
+      <h2>Сбор на сервер</h2>
+      <p class="lead">Lonestar против Valkyria. Цель <b>11 000 ₽</b>. Основатель вносит <b>3 000 ₽</b>.</p>
+      <p class="fund-bar" aria-hidden="true"><span style="width: 27.27%"></span></p>
+      <p class="note">На камне 3 000 ₽ из 11 000 ₽.</p>
+      <div class="stone">
+        <p>FOB</p>
+        <h3>Пожертвовали</h3>
+        <ul>
+          <li>Vladimir (9hzkak)<small>3 000 ₽</small></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+  <script>
+    const start = Date.parse("2026-11-12T13:00:00Z");
+    const finish = Date.parse("2026-11-12T15:00:00Z");
+    const note = document.querySelector<HTMLElement>("#maint");
+    const hall = document.querySelector("#hall");
+    const tick = () => {
+      if (!note) return;
+      const now = Date.now();
+      if (now >= finish) {
+        note.textContent = "Техработы по плану закончились в 18:00 МСК. Сезон 3 должен быть открыт.";
+        return;
+      }
+      if (now >= start) {
+        note.textContent = "Техработы идут: серверы игры закрыты примерно до 18:00 МСК.";
+        return;
+      }
+      const left = start - now;
+      const hours = Math.floor(left / 3600000);
+      const minutes = Math.floor((left % 3600000) / 60000);
+      note.textContent = `До техработ в игре ${hours} ч ${minutes} мин. Старт 16:00 МСК, окно до 18:00.`;
+    };
+    tick();
+    setInterval(tick, 30000);
+    if (hall && Date.now() < start) {
+      fetch("/api/ratings?sort=level")
+        .then((response) => response.json())
+        .then((data) => {
+          const players = Array.isArray(data.players) ? data.players.slice(0, 3) : [];
+          if (players.length < 3) return;
+          const order = [1, 0, 2];
+          const pods = hall.querySelectorAll<HTMLAnchorElement>(".pod");
+          order.forEach((index, slot) => {
+            const player = players[index];
+            const pod = pods[slot];
+            if (!player || !pod) return;
+            const name = String(player.persona || "игрок");
+            const level = Number(player.wardog_level || 0);
+            const id = String(player.steam_id || "");
+            pod.href = id ? `/p?id=${id}` : "/ratings";
+            const title = pod.querySelector("strong");
+            const meta = pod.querySelector("small");
+            if (title) title.textContent = name;
+            if (meta) meta.textContent = `уровень ${level}`;
+          });
+        })
+        .catch(() => undefined);
+    }
+  </script>
 </Base>

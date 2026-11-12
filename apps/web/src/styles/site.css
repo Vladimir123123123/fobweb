@@ -191,6 +191,63 @@ p { color: var(--muted); line-height: 1.55; }
 }
 .home-paths a:hover { color: #fff; }
 .stage .btn.ghost { border-color: transparent; padding-left: 0; }
+.season-lock {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 28px;
+  padding: 28px 0 64px;
+}
+.season-lock h2 { margin: 0 0 8px; font-size: 28px; }
+.season-lock .pod strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.25;
+}
+.fund-bar {
+  height: 8px;
+  margin: 14px 0 8px;
+  background: #1c212b;
+  border: 1px solid var(--line);
+}
+.fund-bar span { display: block; height: 100%; background: var(--accent); }
+.stone {
+  margin-top: 16px;
+  padding: 26px 22px 18px;
+  text-align: center;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.08), transparent 42%),
+    linear-gradient(180deg, #3c3934, #1a1815 72%);
+  border: 1px solid #6a6256;
+  border-radius: 18px 18px 6px 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+.stone p {
+  margin: 0;
+  color: #b7aa96;
+  letter-spacing: 0.28em;
+  font-size: 12px;
+}
+.stone h3 {
+  margin: 8px 0 14px;
+  color: #f3eadc;
+  font-family: Unbounded, "Golos Text", sans-serif;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.stone ul { list-style: none; margin: 0; padding: 0; }
+.stone li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(243, 234, 220, 0.16);
+  color: #f6f0e6;
+  text-shadow: 0 1px 0 #000;
+}
+.stone small { color: #cbbfaa; letter-spacing: 0.04em; }
 .hero .lead { max-width: none; margin-bottom: 18px; color: #e7e9ee; }
 .home-intro {
   display: flex;
@@ -1156,6 +1213,9 @@ body.fit .foot { padding: 8px 0 10px; }
   .dossier-level b { font-size: 40px; }
   .podium, .podium[data-n="2"], .podium[data-n="3"] { grid-template-columns: 1fr; }
   .pod, .pod-1, .pod-2, .pod-3 { order: 0; }
+  .season-lock .pod-1 { order: 1; }
+  .season-lock .pod-2 { order: 2; }
+  .season-lock .pod-3 { order: 3; }
   .pod b, .pod-1 b { font-size: 36px; }
   .ladder .who .name { max-width: 140px; }
   .ladder th:nth-child(1), .ladder td:nth-child(1),
@@ -1194,6 +1254,7 @@ body.fit .foot { padding: 8px 0 10px; }
   .wrow span:nth-child(5) { display: none; }
   .stage { min-height: 70vh; }
   .stage h1 { font-size: 44px; }
+  .season-lock { grid-template-columns: 1fr; }
   .bay { grid-template-columns: 1fr; min-height: 0; }
   .bay-pic { grid-column: 1; grid-row: auto; min-height: 220px; }
   .bay-stats { grid-column: 1; }
