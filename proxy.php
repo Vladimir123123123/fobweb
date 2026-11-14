@@ -20,6 +20,10 @@ if (!empty($_SERVER['HTTP_COOKIE'])) {
     $headers[] = 'Cookie: ' . $_SERVER['HTTP_COOKIE'];
 }
 // Секретные ключи бота / sync — иначе Node не увидит x-bot-key / x-sync-key.
+$authorization = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+if ($authorization !== '') {
+    $headers[] = 'Authorization: ' . $authorization;
+}
 foreach (['HTTP_X_BOT_KEY' => 'x-bot-key', 'HTTP_X_SYNC_KEY' => 'x-sync-key', 'HTTP_ACCEPT' => 'Accept'] as $serverKey => $headerName) {
     if (!empty($_SERVER[$serverKey])) {
         $headers[] = $headerName . ': ' . $_SERVER[$serverKey];
