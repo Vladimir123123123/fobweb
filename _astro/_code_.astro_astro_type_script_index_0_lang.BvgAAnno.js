@@ -11,6 +11,12 @@ const s=document.querySelector("#gate"),l=new URLSearchParams(location.search).g
       <p class="note">В этом сезоне снимков: ${a.seasonPlayers??0}. Кнопка стирает только текущий сезон. Сезон 2 остаётся.</p>
       <button class="btn" id="reset-season" type="button">Обнулить топ сезона</button>
       <p id="reset-note" class="note"></p>
+      <h2>Запросы в поиске</h2>
+      <p class="note">Страницы подписаны под эти формулировки. Таблица ниже — слова, которые поисковик передал вместе с переходом. Google часто их не отдаёт.</p>
+      <p class="tags">${(a.searchTags??[]).map(t=>`<span>${e(t)}</span>`).join("")}</p>
+      <div class="scroll"><table><tbody>
+        ${(a.searchHits??[]).map(t=>`<tr><td>${e(t.engine||"")}</td><td>${e(t.query||"")}</td><td>${t.count}</td></tr>`).join("")||"<tr><td>Пока нет перехода, где поисковик передал текст запроса.</td></tr>"}
+      </tbody></table></div>
       <h2>Откуда пришли</h2>
       <div class="scroll"><table><tbody>
         ${a.sources.map(t=>`<tr><td>${t.source}</td><td>${t.count}</td></tr>`).join("")}
