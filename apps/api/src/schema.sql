@@ -36,6 +36,16 @@ CREATE TABLE IF NOT EXISTS snapshots (
 
 CREATE INDEX IF NOT EXISTS snapshots_player ON snapshots (steam_id, created_at);
 
+CREATE TABLE IF NOT EXISTS server_combat (
+  steam_id varchar(20) PRIMARY KEY,
+  kills int NOT NULL DEFAULT 0,
+  deaths int NOT NULL DEFAULT 0,
+  match_kills int NOT NULL DEFAULT 0,
+  match_deaths int NOT NULL DEFAULT 0,
+  faction varchar(40),
+  seen_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS sync_sessions (
   steam_id varchar(20) PRIMARY KEY,
   status varchar(20) NOT NULL,

@@ -5,6 +5,7 @@ import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
+import { ingestCombat } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
@@ -21,6 +22,9 @@ const SORTS: Record<string, string> = {
   support: "role_support",
   driver: "role_driver",
   pilot: "role_pilot",
+  kills: "server_kills",
+  deaths: "server_deaths",
+  kd: "server_kd",
 };
 
 const PUBLIC_EVENTS = new Set(["page_view", "discord_click", "share_build", "squad_banner_click"]);
@@ -898,7 +902,13 @@ app.get("/api/ratings", async (request) => {
   const rows = await sql.unsafe(
     `SELECT u.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
-            s.created_at, u.persona, u.avatar, u.country
+            s.created_at, u.persona, u.avatar, u.country,
+            c.kills AS server_kills, c.deaths AS server_deaths, c.faction AS server_faction,
+            CASE
+              WHEN c.steam_id IS NULL THEN NULL
+              WHEN c.deaths = 0 THEN c.kills
+              ELSE ROUND(c.kills / c.deaths, 2)
+            END AS server_kd
      FROM users u
      JOIN (
        SELECT s.*
@@ -911,6 +921,7 @@ app.get("/api/ratings", async (request) => {
        ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
        WHERE s.season = ?
      ) s ON s.steam_id = u.steam_id
+     LEFT JOIN server_combat c ON c.steam_id = u.steam_id
      WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
        AND (? = '' OR u.persona LIKE ? OR u.steam_id LIKE ?)
      ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, u.persona ASC
@@ -1792,4 +1803,7 @@ setInterval(() => {
 }, 24 * 60 * 60 * 1000);
 await app.listen({ port: config.port, host: "0.0.0.0" });
 app.log.info(`API ${config.port}, сезон ${config.season}`);
+const pullCombat = () => ingestCombat().catch((error) => app.log.error(error));
+pullCombat();
+setInterval(pullCombat, 20_000).unref();
 refreshPublicCareers().catch((error) => app.log.error(error));
