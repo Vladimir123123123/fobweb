@@ -65,6 +65,7 @@ const jsonLd = JSON.stringify({
           <a href="/guides" aria-current={path.startsWith("/guides") ? "page" : undefined}>Гайды</a>
           <a href="/squads" aria-current={path.startsWith("/squad") ? "page" : undefined}>Сквады</a>
           <div class="account">
+            <a class="btn ghost small" href="/auth/wardogs/start?next=/ratings">Обновить статистику</a>
             <a class="btn small" href="/discord">В Discord</a>
             <span id="account"></span>
           </div>
