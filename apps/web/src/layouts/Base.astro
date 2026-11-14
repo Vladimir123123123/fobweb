@@ -45,7 +45,9 @@ const jsonLd = JSON.stringify({
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content="https://fob-wd.ru/brand/banner.jpg" />
     {robots && <meta name="robots" content={robots} />}
+    <link rel="icon" href="/brand/logo.png" type="image/png" sizes="512x512" />
     <link rel="icon" href="/brand/logo.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/brand/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap" />
     <script type="application/ld+json" is:inline set:html={jsonLd}></script>
