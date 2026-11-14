@@ -4,9 +4,13 @@ import { steamProfile, wardogsHours } from "./steam.js";
 
 const HOT_KILLS = 15;
 const TEN_MINUTES = 10 * 60 * 1000;
+const PUSH_TTL = 3 * 60 * 1000;
+const PLAYABLE = ["lonestar", "valkyra", "manticore"] as const;
 const killTicks: Array<{ at: number; kills: number }> = [];
 const matchKills = new Map<string, number>();
+const knownHours = new Map<string, number | null>();
 let lastRoster: RosterPlayer[] = [];
+let pushedRoster: { at: number; factions: Array<{ name: string; score: number }>; players: RosterPlayer[] } | null = null;
 
 function sideOf(name: string) {
   const key = name.toLowerCase();
@@ -53,23 +57,59 @@ async function hoursOf(steamIds: string[]) {
   return found;
 }
 
+function rosterNow() {
+  if (config.rconHost && config.rconPassword) return lastRoster;
+  if (pushedRoster && Date.now() - pushedRoster.at < PUSH_TTL) return pushedRoster.players;
+  return lastRoster;
+}
+
+function factionsNow(factions: Array<{ name: string; score: number }>) {
+  if (factions.length) return factions;
+  if (pushedRoster && Date.now() - pushedRoster.at < PUSH_TTL) return pushedRoster.factions;
+  return factions;
+}
+
+/** В счёте RCON всегда три фракции. В матче остаются те, у кого есть игроки или очки. */
+export function playingFactions(factions: Array<{ name: string; score: number }>, players: RosterPlayer[]) {
+  const counts = new Map<string, number>();
+  for (const player of players) {
+    const key = sideOf(player.faction);
+    if (!PLAYABLE.includes(key as (typeof PLAYABLE)[number])) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const scored = new Map(factions.map((faction) => [sideOf(faction.name), faction]));
+  return PLAYABLE.flatMap((key) => {
+    const count = counts.get(key) ?? 0;
+    const row = scored.get(key);
+    if (count <= 0 && !(row && row.score > 0)) return [];
+    return [row ?? { name: key === "lonestar" ? "Lonestar" : key === "valkyra" ? "Valkyra" : "Manticore", score: 0 }];
+  });
+}
+
+export function rememberLive(factions: Array<{ name: string; score: number }>, players: RosterPlayer[]) {
+  pushedRoster = { at: Date.now(), factions, players };
+  void refreshHours(players.map((player) => player.steamId));
+}
+
+async function refreshHours(steamIds: string[]) {
+  if (!steamIds.length) return;
+  const found = await hoursOf(steamIds);
+  for (const [steamId, hours] of found) knownHours.set(steamId, hours);
+}
+
 export async function fightSnapshot(factions: Array<{ name: string; score: number }>) {
   const kills10 = killsInTenMinutes();
+  const roster = rosterNow();
   const teams = new Map<string, { name: string; score: number; players: RosterPlayer[]; hours: Array<number | null> }>();
-  const seed = factions.length ? factions : [
-    { name: "Lonestar", score: 0 },
-    { name: "Valkyra", score: 0 },
-    { name: "Manticore", score: 0 },
-  ];
-  for (const faction of seed) {
+  for (const faction of playingFactions(factionsNow(factions), roster)) {
     teams.set(sideOf(faction.name), { name: faction.name, score: faction.score, players: [], hours: [] });
   }
-  const hours = lastRoster.length ? await hoursOf(lastRoster.map((player) => player.steamId)) : new Map<string, number | null>();
-  for (const player of lastRoster) {
+  for (const player of roster) {
     const key = sideOf(player.faction);
-    const team = teams.get(key) ?? { name: player.faction || "Без стороны", score: 0, players: [], hours: [] };
+    const team = teams.get(key);
+    if (!team) continue;
     team.players.push(player);
-    team.hours.push(hours.get(player.steamId) ?? null);
+    team.hours.push(knownHours.get(player.steamId) ?? null);
     teams.set(key, team);
   }
   const order = ["lonestar", "valkyra", "manticore"];
@@ -136,6 +176,7 @@ export async function ingestCombat(): Promise<number> {
   const players = await roster();
   lastRoster = players;
   noteKills(players);
+  void refreshHours(players.map((player) => player.steamId));
   for (const player of players) {
     const existing = await sql<Array<{ kills: number; deaths: number; match_kills: number; match_deaths: number; persona: string | null; avatar: string | null }>>`
       SELECT kills, deaths, match_kills, match_deaths, persona, avatar FROM server_combat WHERE steam_id = ${player.steamId}

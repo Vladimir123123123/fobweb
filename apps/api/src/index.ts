@@ -7,7 +7,7 @@ import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./m
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
 import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
-import { fightSnapshot, ingestCombat } from "./server-combat.js";
+import { fightSnapshot, ingestCombat, rememberLive } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
@@ -579,7 +579,11 @@ app.get("/api/server", async (_request, reply) => {
     const server = await liveServer();
     if (!server) return reply.code(503).send({ error: "offline" });
     const fight = await fightSnapshot(server.factions);
-    return { ...server, ...fight };
+    return {
+      ...server,
+      factions: fight.teams.map((team) => ({ name: team.name, score: team.score })),
+      ...fight,
+    };
   } catch {
     return reply.code(503).send({ error: "offline" });
   }
@@ -1086,6 +1090,34 @@ app.post("/api/bot/refresh/:steamId", async (request, reply) => {
   const pulled = await ensureCareer(steamId);
   const payload = await botPlayerPayload(steamId);
   return { ok: true, pulled, ...payload };
+});
+
+app.post("/api/bot/live", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const body = request.body as { factions?: unknown; players?: unknown } | null;
+  const factions = Array.isArray(body?.factions) ? body.factions.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const name = text(row.name, 40);
+    if (!name) return [];
+    const score = Number(row.score);
+    return [{ name, score: Number.isFinite(score) ? Math.round(score) : 0 }];
+  }) : [];
+  const players = Array.isArray(body?.players) ? body.players.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const steamId = text(row.steamId, 20);
+    if (!/^\d{17}$/.test(steamId)) return [];
+    return [{
+      steamId,
+      name: text(row.name, 80),
+      kills: Number(row.kills) || 0,
+      deaths: Number(row.deaths) || 0,
+      faction: text(row.faction, 40),
+    }];
+  }).slice(0, 200) : [];
+  rememberLive(factions, players);
+  return { ok: true, players: players.length };
 });
 
 app.get("/api/bot/board", async (request, reply) => {

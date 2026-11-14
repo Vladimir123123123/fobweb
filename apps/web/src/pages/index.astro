@@ -81,6 +81,7 @@ const season = import.meta.env.GAME_SEASON ?? "03";
     }) => {
       if (fightHot) fightHot.hidden = !data.hot;
       if (!fightTeams || !Array.isArray(data.teams)) return;
+      fightTeams.dataset.cols = String(Math.max(1, Math.min(3, data.teams.length || 2)));
       const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
       fightTeams.innerHTML = data.teams.map((team) => {
         const name = String(team.name || "Сторона");
