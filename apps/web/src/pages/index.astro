@@ -77,7 +77,7 @@ const season = import.meta.env.GAME_SEASON ?? "03";
     const fightLive = document.querySelector<HTMLElement>("#fight-live");
     const fightTrack = document.querySelector<HTMLElement>("#fight-track");
     const fightTeams = document.querySelector("#fight-teams");
-    let crawlKey = "";
+    let crawlKey = "\u0000";
     const paintFight = (data: {
       hot?: boolean;
       online?: boolean;
