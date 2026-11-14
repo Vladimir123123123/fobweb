@@ -47,6 +47,22 @@ export function getStaticPaths() {
         <div class="stat"><b>${data.shares7d}</b><span>Ссылки сборок, 7 дней</span></div>
       </div>
       <p class="note">Входы за 7 дней: ${data.logins7d}. Клики по баннерам сквадов: ${data.squadBannerClicks7d ?? 0}. Сессии синка: живые ${count("active")}, погасшие ${count("expired")}.</p>
+      <h2>Гайды</h2>
+      <p class="note">Пустая строка начинает абзац. Строка с «- » — пункт списка. **так** выделяет слово. Ссылка необязательна: страница сайта вроде /ratings или адрес https://…</p>
+      <form id="guide-form" class="guide-form">
+        <label>Рубрика<input id="guide-rubric" maxlength="40" placeholder="Steam"></label>
+        <label>Заголовок<input id="guide-title" maxlength="120" required></label>
+        <label>Текст<textarea id="guide-body" maxlength="8000" required></textarea></label>
+        <label>Ссылка<input id="guide-href" maxlength="200" placeholder="/ratings"></label>
+        <label>Порядок<input id="guide-sort" type="number" min="0" max="9999" value="0"></label>
+        <label class="check"><input id="guide-hidden" type="checkbox"> Скрыть с сайта</label>
+        <div class="row">
+          <button class="btn" id="guide-save" type="submit">Добавить</button>
+          <button class="btn ghost" id="guide-cancel" type="button" hidden>Отмена</button>
+        </div>
+        <p id="guide-note" class="note"></p>
+      </form>
+      <div id="guide-list"></div>
       <h2>Топ сезона ${esc(String(data.season ?? ""))}</h2>
       <p class="note">В этом сезоне снимков: ${data.seasonPlayers ?? 0}. Кнопка стирает только текущий сезон. Сезон 2 остаётся.</p>
       <button class="btn" id="reset-season" type="button">Обнулить топ сезона</button>
@@ -85,6 +101,87 @@ export function getStaticPaths() {
       <button class="btn" id="invite" type="button">Выдать ссылку на 48 часов</button>
       <p id="invite-url"></p>
     `;
+    type GuideRow = { id: number; rubric: string; title: string; body: string; href: string; sort_order: number; hidden: boolean };
+    const guideRows: GuideRow[] = data.guides ?? [];
+    const guideForm = gate.querySelector<HTMLFormElement>("#guide-form");
+    const guideList = gate.querySelector("#guide-list");
+    const guideNote = gate.querySelector("#guide-note");
+    const guideCancel = gate.querySelector<HTMLButtonElement>("#guide-cancel");
+    const guideSave = gate.querySelector("#guide-save");
+    let editing = 0;
+    const field = (id: string) => gate.querySelector<HTMLInputElement | HTMLTextAreaElement>(id);
+    const paintGuides = () => {
+      if (!guideList) return;
+      guideList.innerHTML = guideRows.map((guide) => `<p><b>${esc(guide.title)}</b> · ${esc(guide.rubric || "без рубрики")} · ${guide.hidden ? "скрыт" : "на сайте"} <button class="btn ghost small" data-guide-edit="${guide.id}" type="button">Править</button> <button class="btn ghost small" data-guide-hide="${guide.id}" type="button">${guide.hidden ? "Показать" : "Скрыть"}</button> <button class="btn ghost small" data-guide-delete="${guide.id}" type="button">Удалить</button></p>`).join("") || "<p>Пока пусто.</p>";
+    };
+    const clearGuide = () => {
+      editing = 0;
+      guideForm?.reset();
+      if (guideSave) guideSave.textContent = "Добавить";
+      guideCancel?.setAttribute("hidden", "");
+    };
+    paintGuides();
+    guideForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = {
+        rubric: field("#guide-rubric")?.value ?? "",
+        title: field("#guide-title")?.value ?? "",
+        body: field("#guide-body")?.value ?? "",
+        href: field("#guide-href")?.value ?? "",
+        sort: Number(field("#guide-sort")?.value || 0),
+        hidden: gate.querySelector<HTMLInputElement>("#guide-hidden")?.checked === true,
+      };
+      const response = await fetch(editing ? `/api/admin/guides/${editing}` : "/api/admin/guides", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        if (guideNote) guideNote.textContent = "Не сохранилось. Нужны заголовок и текст.";
+        return;
+      }
+      location.reload();
+    });
+    guideCancel?.addEventListener("click", clearGuide);
+    guideList?.addEventListener("click", async (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("button");
+      if (!button) return;
+      const id = Number(button.dataset.guideEdit || button.dataset.guideHide || button.dataset.guideDelete);
+      const guide = guideRows.find((item) => item.id === id);
+      if (!guide) return;
+      if (button.dataset.guideEdit) {
+        editing = guide.id;
+        const rubric = field("#guide-rubric");
+        const title = field("#guide-title");
+        const body = field("#guide-body");
+        const href = field("#guide-href");
+        const sort = field("#guide-sort");
+        const hidden = gate.querySelector<HTMLInputElement>("#guide-hidden");
+        if (rubric) rubric.value = guide.rubric || "";
+        if (title) title.value = guide.title;
+        if (body) body.value = guide.body;
+        if (href) href.value = guide.href || "";
+        if (sort) sort.value = String(guide.sort_order || 0);
+        if (hidden) hidden.checked = Boolean(guide.hidden);
+        if (guideSave) guideSave.textContent = "Сохранить";
+        guideCancel?.removeAttribute("hidden");
+        guideForm?.scrollIntoView({ block: "center" });
+        return;
+      }
+      if (button.dataset.guideHide) {
+        await fetch(`/api/admin/guides/${guide.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...guide, sort: guide.sort_order, hidden: !guide.hidden }),
+        });
+        location.reload();
+        return;
+      }
+      if (button.dataset.guideDelete && confirm(`Удалить «${guide.title}»?`)) {
+        await fetch(`/api/admin/guides/${guide.id}`, { method: "DELETE" });
+        location.reload();
+      }
+    });
     gate.querySelector("#reset-season")?.addEventListener("click", async () => {
       if (!confirm(`Обнулить топ сезона ${data.season}? Снимки сезона 2 не удаляются.`)) return;
       const typed = prompt("Для подтверждения напишите ОБНУЛИТЬ");

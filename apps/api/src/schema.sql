@@ -208,5 +208,16 @@ CREATE TABLE IF NOT EXISTS build_notes (
 
 CREATE INDEX IF NOT EXISTS build_notes_build ON build_notes (build_id, created_at);
 
+CREATE TABLE IF NOT EXISTS guides (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  rubric varchar(40) NOT NULL DEFAULT '',
+  title varchar(120) NOT NULL,
+  body text NOT NULL,
+  href varchar(200) NOT NULL DEFAULT '',
+  sort_order int NOT NULL DEFAULT 0,
+  hidden tinyint(1) NOT NULL DEFAULT 0,
+  updated_at datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 ALTER TABLE squads ADD COLUMN IF NOT EXISTS about varchar(700) NOT NULL DEFAULT '';
 ALTER TABLE squads ADD COLUMN IF NOT EXISTS criteria varchar(700) NOT NULL DEFAULT '';

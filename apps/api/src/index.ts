@@ -5,6 +5,7 @@ import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
+import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
 import { fightSnapshot, ingestCombat } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
@@ -543,6 +544,34 @@ app.setErrorHandler((error, _request, reply) => {
 app.get("/api/health", async () => {
   await sql`SELECT 1`;
   return { ok: true, season: config.season };
+});
+
+function guideFields(body: Record<string, unknown> | null) {
+  if (!body) return null;
+  const title = text(body.title, 120);
+  const content = text(body.body, 8000);
+  if (!title || !content) return null;
+  let href = text(body.href, 200);
+  if (href && !((href.startsWith("/") && !href.startsWith("//")) || href.startsWith("https://"))) href = "";
+  const sort = Number(body.sort);
+  return {
+    rubric: text(body.rubric, 40),
+    title,
+    body: content,
+    href,
+    sort: Number.isFinite(sort) ? Math.max(0, Math.min(9999, Math.round(sort))) : 0,
+    hidden: body.hidden === true,
+  };
+}
+
+app.get("/api/guides", async () => {
+  const guides = await sql`
+    SELECT id, rubric, title, body, href, sort_order
+    FROM guides
+    WHERE hidden = 0
+    ORDER BY sort_order, id
+  `;
+  return { guides };
 });
 
 app.get("/api/server", async (_request, reply) => {
@@ -1701,6 +1730,11 @@ app.get("/api/admin/overview", async (request, reply) => {
   const sync = await sql<{ status: string; count: number }[]>`
     SELECT status, CAST(COUNT(*) AS SIGNED) AS count FROM sync_sessions GROUP BY status
   `;
+  const guides = await sql`
+    SELECT id, rubric, title, body, href, sort_order, hidden
+    FROM guides
+    ORDER BY sort_order, id
+  `;
   const [seasonBoard] = await sql<{ count: number }[]>`
     SELECT CAST(COUNT(DISTINCT steam_id) AS SIGNED) AS count
     FROM snapshots
@@ -1724,6 +1758,7 @@ app.get("/api/admin/overview", async (request, reply) => {
     assets,
     reports,
     builds,
+    guides,
     sync,
     gate: `/g/${config.adminPath}`,
     season: config.season,
@@ -1744,6 +1779,41 @@ app.post("/api/admin/season/reset", async (request, reply) => {
     DELETE FROM snapshots WHERE season = ${config.season}
   `;
   return { ok: true, season: config.season, removed: removed[0]?.affected ?? 0 };
+});
+
+app.post("/api/admin/guides", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const guide = guideFields(asObject(request.body));
+  if (!guide) return reply.code(400).send({ error: "bad_request" });
+  const sort = guide.sort || Number((await sql<{ n: number }[]>`SELECT CAST(COALESCE(MAX(sort_order), 0) + 1 AS SIGNED) AS n FROM guides`)[0]?.n ?? 1);
+  const inserted = await sql`
+    INSERT INTO guides (rubric, title, body, href, sort_order, hidden)
+    VALUES (${guide.rubric}, ${guide.title}, ${guide.body}, ${guide.href}, ${sort}, ${guide.hidden})
+  `;
+  return { ok: true, id: Number(inserted[0]?.id ?? 0) };
+});
+
+app.patch("/api/admin/guides/:id", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1) return notFound(reply);
+  const guide = guideFields(asObject(request.body));
+  if (!guide) return reply.code(400).send({ error: "bad_request" });
+  await sql`
+    UPDATE guides
+    SET rubric = ${guide.rubric}, title = ${guide.title}, body = ${guide.body},
+        href = ${guide.href}, sort_order = ${guide.sort}, hidden = ${guide.hidden}
+    WHERE id = ${id}
+  `;
+  return { ok: true };
+});
+
+app.delete("/api/admin/guides/:id", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1) return notFound(reply);
+  await sql`DELETE FROM guides WHERE id = ${id}`;
+  return { ok: true };
 });
 
 app.post("/api/admin/invites", async (request, reply) => {
@@ -1858,6 +1928,7 @@ setInterval(() => {
 }, 15 * 60 * 1000).unref();
 
 await migrate();
+await seedGuides();
 dumpDatabase().catch((error) => app.log.error(error));
 setInterval(() => {
   dumpDatabase().catch((error) => app.log.error(error));

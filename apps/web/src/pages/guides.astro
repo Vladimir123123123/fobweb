@@ -5,51 +5,52 @@ import Base from "../layouts/Base.astro";
   <p class="eyebrow">Сообщество</p>
   <h1>Гайды</h1>
   <p class="lead">Короткие инструкции по сайту и по игре. Условия достижений — как они написаны в Steam.</p>
-  <section class="guide-grid">
-    <a class="panel" href="/p">
-      <p class="eyebrow">Профиль</p>
-      <h2>Снимок карьеры</h2>
-      <p>Войдите через Steam и в своём профиле нажмите «Обновить через Steam». Игра в этот момент закрыта. Так на сайт попадают уровень, классы и место в топе. Без снимка строка в рейтинге пустая.</p>
-    </a>
-    <a class="panel" href="/calculator">
-      <p class="eyebrow">Сборки</p>
-      <h2>Комплект у торговца</h2>
-      <p>Калькулятор считает цену и вес из файлов игры. Готовую сборку можно отправить ссылкой и поставить в топ сезона на странице сборок.</p>
-    </a>
-    <a class="panel" href="/ratings">
-      <p class="eyebrow">Рейтинг</p>
-      <h2>Кто попадает в топ</h2>
-      <p>В топе те, кто вошёл на сайт или привязан из Discord, пока сами не скрыли профиль. Сортировка есть по уровню, опыту, деньгам и классам: штурм, медик, разведка, поддержка, водитель, пилот.</p>
-    </a>
-    <a class="panel" href="/squads">
-      <p class="eyebrow">Сквад</p>
-      <h2>Один отряд на игрока</h2>
-      <p>Вступить можно после входа через Steam. Один человек состоит в одном скваде. Описание, критерии набора и прайм-тайм клан пишет в карточке сам.</p>
-    </a>
-  </section>
-  <section class="guide-notes">
-    <article class="panel">
-      <p class="eyebrow">Steam</p>
-      <h2>Как получать достижения</h2>
-      <p>В Steam их десять. Условие открыто у девяти. That was rude в списке есть, но текст Steam прячет — чужой рецепт здесь не выдаётся за правило.</p>
-      <ul>
-        <li><strong>This is WARDOGS.</strong> Пройти обучение.</li>
-        <li><strong>Ricochet.</strong> Убить врага пулей после рикошета. Оружие и угол Steam не задаёт.</li>
-        <li><strong>Fat Stacks.</strong> $100 000 чистой прибыли за одну жизнь. Это заработок, не трата.</li>
-        <li><strong>Long Shot.</strong> Убить врага с расстояния больше 950 м.</li>
-        <li><strong>Top Dog.</strong> Закончить матч с самым большим заработком среди всех команд.</li>
-        <li><strong>CZ Survivor.</strong> Провести 60 минут в зоне контроля и не умереть. Steam не пишет, должен ли час быть подряд и в одном матче.</li>
-        <li><strong>Do Not Resuscitate.</strong> Убить врага зарядом дефибриллятора.</li>
-        <li><strong>Clean Sweep.</strong> Победить так, чтобы обе чужие команды закончили матч с нулём очков. Это результат отряда.</li>
-        <li><strong>Big Spender.</strong> Потратить $100 000 на один комплект. Разбор ниже.</li>
-      </ul>
-    </article>
-    <article class="panel">
-      <p class="eyebrow">Big Spender</p>
-      <h2>Закуп за $100 000</h2>
-      <p>Считается одна покупка одного комплекта у торговца на $100 000 или больше. Несколько закупок за матч не складываются. Купить союзникам пять комплектов по $20 000 — это тоже не одна покупка, такое у игроков достижение не открывало.</p>
-      <p>Это не Fat Stacks. Там нужно заработать $100 000 чистой прибыли за одну жизнь, а здесь — потратить эту сумму на свой комплект разом.</p>
-      <p>Цену можно прикинуть на стрельбище: там торговец ничего не списывает. Собрали комплект, закрыли лавку и открыли инвентарь на Tab — слева видна сумма. Если она от $100 000, тот же комплект покупают уже в матче одной кнопкой, когда на счету хватает денег и предметы открыты.</p>
-    </article>
-  </section>
+  <section class="guide-grid" id="guide-grid"></section>
+  <section class="guide-notes" id="guide-notes"></section>
+  <p class="note" id="guide-empty" hidden>Гайды сейчас не открываются.</p>
 </Base>
+<script>
+  const grid = document.querySelector<HTMLElement>("#guide-grid")!;
+  const notes = document.querySelector<HTMLElement>("#guide-notes")!;
+  const empty = document.querySelector<HTMLElement>("#guide-empty")!;
+  const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  const inline = (value: string) => esc(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  const htmlOf = (body: string) => body.split(/\n{2,}/).map((chunk) => {
+    const lines = chunk.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (lines.length && lines.every((line) => line.startsWith("- "))) {
+      return `<ul>${lines.map((line) => `<li>${inline(line.slice(2))}</li>`).join("")}</ul>`;
+    }
+    return `<p>${inline(lines.join(" "))}</p>`;
+  }).join("");
+  type Guide = { rubric?: string; title?: string; body?: string; href?: string };
+  const card = (guide: Guide, linked: boolean) => {
+    const body = htmlOf(String(guide.body || ""));
+    const head = `<p class="eyebrow">${esc(String(guide.rubric || "Гайд"))}</p><h2>${esc(String(guide.title || "Гайд"))}</h2>${body}`;
+    const href = String(guide.href || "");
+    if (linked && href) return `<a class="panel" href="${esc(href)}">${head}</a>`;
+    const more = href ? `<p><a href="${esc(href)}">Открыть</a></p>` : "";
+    return `<article class="panel">${head}${more}</article>`;
+  };
+  try {
+    const response = await fetch("/api/guides");
+    if (!response.ok) throw new Error("guides");
+    const data = await response.json();
+    const guides = Array.isArray(data.guides) ? data.guides as Guide[] : [];
+    const short: string[] = [];
+    const long: string[] = [];
+    for (const guide of guides) {
+      const body = String(guide.body || "");
+      const href = String(guide.href || "");
+      const compact = Boolean(href) && body.length < 320 && !body.includes("\n- ");
+      (compact ? short : long).push(card(guide, compact));
+    }
+    grid.innerHTML = short.join("");
+    notes.innerHTML = long.join("");
+    if (!guides.length) {
+      empty.hidden = false;
+      empty.textContent = "Гайдов пока нет.";
+    }
+  } catch {
+    empty.hidden = false;
+  }
+</script>

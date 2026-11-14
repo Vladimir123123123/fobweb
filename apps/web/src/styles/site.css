@@ -779,7 +779,10 @@ label.check input { width: auto; }
 .guide-notes h2 { margin: 0 0 8px; }
 .guide-notes p, .guide-notes li { color: #e7e9ee; }
 .guide-notes p + p { margin-top: 10px; }
-.guide-notes ul { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.guide-notes ul, .guide-grid ul { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.guide-form { display: grid; gap: 8px; max-width: 720px; margin: 8px 0 16px; }
+.guide-form [hidden] { display: none; }
+.guide-form .check { display: flex; gap: 8px; align-items: center; }
 .guide-notes strong { color: #fff; font-weight: 500; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
 .step { animation: rise 0.5s ease both; transition: transform 0.18s ease, border-color 0.18s ease; }
