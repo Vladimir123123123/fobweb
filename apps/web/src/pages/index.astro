@@ -30,12 +30,12 @@ const season = import.meta.env.GAME_SEASON ?? "03";
   </section>
   <section class="wrap season-lock">
     <div id="fight">
-      <div class="fight-head">
-        <div>
-          <p class="eyebrow">Кто на сервере</p>
-          <h2>Живые убийства</h2>
+      <div class="crawl">
+        <span class="live-mark" id="fight-live" hidden>LIVE</span>
+        <div class="crawl-window">
+          <div class="crawl-track" id="fight-track"></div>
         </div>
-        <p class="hot" id="fight-hot" hidden><b>☠</b> HOT · тут мясо</p>
+        <p class="hot" id="fight-hot" hidden><b>☠</b> HOT</p>
       </div>
       <div id="fight-teams"></div>
     </div>
@@ -74,15 +74,31 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       return found ? marks[found] : "";
     };
     const fightHot = document.querySelector<HTMLElement>("#fight-hot");
+    const fightLive = document.querySelector<HTMLElement>("#fight-live");
+    const fightTrack = document.querySelector<HTMLElement>("#fight-track");
     const fightTeams = document.querySelector("#fight-teams");
+    let crawlKey = "";
     const paintFight = (data: {
       hot?: boolean;
+      online?: boolean;
+      players?: number;
+      feed?: Array<{ name?: string; gained?: number }>;
       teams?: Array<{ name?: string; avgHours?: number | null; players?: Array<{ name?: string; steamId?: string; kills?: number }> }>;
     }) => {
       if (fightHot) fightHot.hidden = !data.hot;
+      if (fightLive) fightLive.hidden = !(data.online !== false && (data.players ?? 0) > 0);
       if (!fightTeams || !Array.isArray(data.teams)) return;
       fightTeams.dataset.cols = String(Math.max(1, Math.min(3, data.teams.length || 2)));
       const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+      const lines = Array.isArray(data.feed) && data.feed.length
+        ? data.feed.map((item) => `${item.name || "игрок"}  +${Number(item.gained) || 1}`)
+        : data.teams.flatMap((team) => (team.players || []).filter((player) => (player.kills || 0) > 0).slice(0, 8).map((player) => `${player.name || "игрок"}  ${player.kills}`));
+      const key = lines.join("|");
+      if (fightTrack && key !== crawlKey) {
+        crawlKey = key;
+        const chunk = lines.length ? lines.map((line) => `<span>${esc(line)}</span>`).join("") : "<span>ждём первое убийство</span>";
+        fightTrack.innerHTML = chunk + chunk;
+      }
       fightTeams.innerHTML = data.teams.map((team) => {
         const name = String(team.name || "Сторона");
         const icon = markOf(name);
@@ -119,6 +135,6 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       if (liveNote) liveNote.textContent = "Сервер сейчас не отвечает.";
     };
     pullServer();
-    setInterval(pullServer, 30000);
+    setInterval(pullServer, 10000);
   </script>
 </Base>

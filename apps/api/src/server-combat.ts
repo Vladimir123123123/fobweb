@@ -7,6 +7,7 @@ const TEN_MINUTES = 10 * 60 * 1000;
 const PUSH_TTL = 3 * 60 * 1000;
 const PLAYABLE = ["lonestar", "valkyra", "manticore"] as const;
 const killTicks: Array<{ at: number; kills: number }> = [];
+const killFeed: Array<{ at: number; name: string; faction: string; gained: number }> = [];
 const matchKills = new Map<string, number>();
 const knownHours = new Map<string, number | null>();
 let lastRoster: RosterPlayer[] = [];
@@ -26,7 +27,18 @@ function noteKills(players: RosterPlayer[]) {
   for (const player of players) {
     seen.add(player.steamId);
     const previous = matchKills.get(player.steamId);
-    if (previous !== undefined) gained += player.kills >= previous ? player.kills - previous : player.kills;
+    if (previous !== undefined && player.kills > previous) {
+      const delta = player.kills - previous;
+      gained += delta;
+      killFeed.unshift({
+        at: Date.now(),
+        name: player.name || "игрок",
+        faction: player.faction,
+        gained: delta,
+      });
+    } else if (previous !== undefined) {
+      gained += player.kills >= previous ? 0 : player.kills;
+    }
     matchKills.set(player.steamId, player.kills);
   }
   for (const steamId of matchKills.keys()) {
@@ -36,6 +48,7 @@ function noteKills(players: RosterPlayer[]) {
   if (gained > 0) killTicks.push({ at: now, kills: gained });
   const cutoff = now - TEN_MINUTES;
   while (killTicks.length && killTicks[0].at < cutoff) killTicks.shift();
+  while (killFeed.length > 40) killFeed.pop();
 }
 
 export function killsInTenMinutes() {
@@ -78,16 +91,24 @@ export function playingFactions(factions: Array<{ name: string; score: number }>
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const scored = new Map(factions.map((faction) => [sideOf(faction.name), faction]));
-  return PLAYABLE.flatMap((key) => {
+  const named = (key: string) => key === "lonestar" ? "Lonestar" : key === "valkyra" ? "Valkyra" : "Manticore";
+  const present = PLAYABLE.flatMap((key) => {
     const count = counts.get(key) ?? 0;
     const row = scored.get(key);
     if (count <= 0 && !(row && row.score > 0)) return [];
-    return [row ?? { name: key === "lonestar" ? "Lonestar" : key === "valkyra" ? "Valkyra" : "Manticore", score: 0 }];
+    return [{ key, count, row: row ?? { name: named(key), score: 0 } }];
   });
+  // Матч на две стороны. Третья с нулём очков и горсткой людей — не сторона настроек.
+  const sides = present.length > 2
+    ? present.filter((side) => side.row.score > 0 || side.count >= 8)
+    : present;
+  const chosen = sides.length >= 2 ? sides : [...present].sort((a, b) => b.count - a.count).slice(0, 2);
+  return chosen.map((side) => side.row);
 }
 
 export function rememberLive(factions: Array<{ name: string; score: number }>, players: RosterPlayer[]) {
   pushedRoster = { at: Date.now(), factions, players };
+  noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
 }
 
@@ -116,6 +137,10 @@ export async function fightSnapshot(factions: Array<{ name: string; score: numbe
   return {
     hot: kills10 >= HOT_KILLS,
     kills10,
+    feed: killFeed
+      .filter((item) => item.at >= Date.now() - TEN_MINUTES)
+      .slice(0, 24)
+      .map((item) => ({ name: item.name, faction: item.faction, gained: item.gained })),
     teams: [...teams.entries()]
       .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
       .map(([, team]) => {
@@ -173,6 +198,7 @@ async function roster(): Promise<RosterPlayer[]> {
 }
 
 export async function ingestCombat(): Promise<number> {
+  if (!config.rconHost || !config.rconPassword) return 0;
   const players = await roster();
   lastRoster = players;
   noteKills(players);
