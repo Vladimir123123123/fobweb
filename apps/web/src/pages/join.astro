@@ -1,0 +1,41 @@
+---
+import Base from "../layouts/Base.astro";
+
+const code = "8bc9a68b-e41c-4801-988f-a594e48762b6";
+---
+<Base title="Зайти на сервер FOB" description="Код сервера FOB #1. Кнопка копирует его и открывает WARDOGS." robots="noindex">
+  <p class="eyebrow">Сервер</p>
+  <h1>Зайти на FOB #1</h1>
+  <p class="lead">Кнопка копирует код и открывает WARDOGS. В игре его вставляют в Join by ID.</p>
+  <p class="join-code" id="join-code">{code}</p>
+  <p><button class="btn" id="join-go" type="button">Зайти на сервер</button></p>
+  <p class="join-note" id="join-note"></p>
+  <ol class="join-steps">
+    <li>Deploy → Community.</li>
+    <li>Слева внизу — Join by ID.</li>
+    <li>Вставь код и нажми Lookup.</li>
+    <li>Join Match.</li>
+  </ol>
+</Base>
+<script define:vars={{ code }}>
+  const button = document.querySelector("#join-go");
+  const note = document.querySelector("#join-note");
+  button?.addEventListener("click", async () => {
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(code);
+      copied = true;
+    } catch {
+      const field = document.querySelector("#join-code");
+      const range = document.createRange();
+      if (field) {
+        range.selectNodeContents(field);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+    }
+    if (note) note.textContent = copied ? "Код скопирован. Открываю игру." : "Выдели код выше и скопируй его. Открываю игру.";
+    window.location.href = "steam://run/1867240";
+  });
+</script>
