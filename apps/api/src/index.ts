@@ -7,6 +7,7 @@ import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./m
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
 import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
+import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
@@ -572,6 +573,13 @@ app.get("/api/guides", async () => {
     ORDER BY sort_order, id
   `;
   return { guides };
+});
+
+app.post("/api/ingest/events", async (request, reply) => {
+  const header = String(request.headers.authorization ?? "");
+  if (!(await feedAuthorized(header))) return reply.code(401).send({ error: "unauthorized" });
+  acceptFeed(request.body);
+  return reply.code(204).send();
 });
 
 app.get("/api/server", async (_request, reply) => {

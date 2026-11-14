@@ -82,7 +82,7 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       hot?: boolean;
       online?: boolean;
       players?: number;
-      feed?: Array<{ name?: string; gained?: number }>;
+      feed?: Array<{ killer?: string; victim?: string; weapon?: string; meters?: number | null; headshot?: boolean; name?: string; gained?: number }>;
       teams?: Array<{ name?: string; avgHours?: number | null; players?: Array<{ name?: string; steamId?: string; kills?: number }> }>;
     }) => {
       if (fightHot) fightHot.hidden = !data.hot;
@@ -90,13 +90,22 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       if (!fightTeams || !Array.isArray(data.teams)) return;
       fightTeams.dataset.cols = String(Math.max(1, Math.min(3, data.teams.length || 2)));
       const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
-      const lines = Array.isArray(data.feed) && data.feed.length
-        ? data.feed.map((item) => `${item.name || "игрок"}  +${Number(item.gained) || 1}`)
-        : data.teams.flatMap((team) => (team.players || []).filter((player) => (player.kills || 0) > 0).slice(0, 8).map((player) => `${player.name || "игрок"}  ${player.kills}`));
+      const lines = Array.isArray(data.feed) && data.feed.some((item) => item.victim)
+        ? data.feed.flatMap((item) => {
+          if (!item.victim) return [];
+          const weapon = item.weapon ? ` · ${item.weapon}` : "";
+          const distance = item.meters ? ` · ${item.meters} м` : "";
+          const head = item.headshot ? " · в голову" : "";
+          const line = item.killer
+            ? `${item.killer} убил ${item.victim}${weapon}${distance}${head}`
+            : `${item.victim} погиб${weapon}${distance}`;
+          return [line];
+        })
+        : [];
       const key = lines.join("|");
       if (fightTrack && key !== crawlKey) {
         crawlKey = key;
-        const chunk = lines.length ? lines.map((line) => `<span>${esc(line)}</span>`).join("") : "<span>ждём первое убийство</span>";
+        const chunk = lines.length ? lines.map((line) => `<span>${esc(line)}</span>`).join("") : "<span>ждём киллфид</span>";
         fightTrack.innerHTML = chunk + chunk;
       }
       fightTeams.innerHTML = data.teams.map((team) => {

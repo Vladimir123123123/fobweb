@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import { sql } from "./db.js";
+import { recentKills } from "./kill-feed.js";
 import { steamProfile, wardogsHours } from "./steam.js";
 
 const HOT_KILLS = 15;
@@ -137,10 +138,7 @@ export async function fightSnapshot(factions: Array<{ name: string; score: numbe
   return {
     hot: kills10 >= HOT_KILLS,
     kills10,
-    feed: killFeed
-      .filter((item) => item.at >= Date.now() - TEN_MINUTES)
-      .slice(0, 24)
-      .map((item) => ({ name: item.name, faction: item.faction, gained: item.gained })),
+    feed: recentKills(),
     teams: [...teams.entries()]
       .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
       .map(([, team]) => {

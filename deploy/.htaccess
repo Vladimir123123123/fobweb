@@ -2,4 +2,4 @@ RewriteEngine On
 RewriteRule ^favicon\.ico$ brand/logo.png [L]
 RewriteCond %{HTTP_USER_AGENT} (Discordbot|Twitterbot|facebookexternalhit|TelegramBot|Slackbot|WhatsApp|LinkedInBot|vkShare) [NC]
 RewriteRule ^(index\.html)?$ preview.php [L]
-RewriteRule ^(api|auth)(/|$) proxy.php [L,QSA]
+RewriteRule ^(api|auth)(/|$) proxy.php [L,QSA,E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
