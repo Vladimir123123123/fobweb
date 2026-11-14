@@ -33,6 +33,10 @@ export const config = {
   databaseUrl: required("DATABASE_URL"),
   port: Number(process.env.SERVER_PORT || process.env.API_PORT || 3000),
   secureCookie: siteOrigin.startsWith("https://"),
+  rconHost: (process.env.GAME_SERVER_HOST ?? "").trim(),
+  rconPort: (process.env.GAME_SERVER_RCON_PORT ?? "").trim() || "31489",
+  rconPassword: (process.env.GAME_SERVER_RCON_PASSWORD ?? "").trim(),
+  browserServerId: (process.env.GAME_BROWSER_SERVER_ID ?? "").trim() || "8bc9a68b-e41c-4801-988f-a594e48762b6",
 };
 
 export const CIS = new Set(["RU", "BY", "KZ", "AM", "AZ", "GE", "MD", "KG", "TJ", "TM", "UZ"]);

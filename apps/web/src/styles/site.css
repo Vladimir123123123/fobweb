@@ -191,6 +191,30 @@ p { color: var(--muted); line-height: 1.55; }
 }
 .home-paths a:hover { color: #fff; }
 .stage .btn.ghost { border-color: transparent; padding-left: 0; }
+.live-server {
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  background: #12151b;
+}
+.live-server h2 { margin: 0 0 14px; font-size: 26px; }
+.live-stats { display: flex; flex-wrap: wrap; gap: 22px; }
+.live-stats p { margin: 0; }
+.live-stats span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted, #9aa3b2);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.live-stats b { font-size: 22px; font-weight: 500; }
+.live-score { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.live-score i {
+  font-style: normal;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+}
 .season-lock {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;

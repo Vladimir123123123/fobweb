@@ -5,6 +5,7 @@ import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
+import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 const SORTS: Record<string, string> = {
@@ -537,6 +538,16 @@ app.setErrorHandler((error, _request, reply) => {
 app.get("/api/health", async () => {
   await sql`SELECT 1`;
   return { ok: true, season: config.season };
+});
+
+app.get("/api/server", async (_request, reply) => {
+  try {
+    const server = await liveServer();
+    if (!server) return reply.code(503).send({ error: "offline" });
+    return server;
+  } catch {
+    return reply.code(503).send({ error: "offline" });
+  }
 });
 
 app.get("/auth/steam", async (request, reply) => {

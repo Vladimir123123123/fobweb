@@ -15,6 +15,17 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       </div>
     </div>
   </section>
+  <section class="wrap live-server" id="live-server">
+    <p class="eyebrow">Игровой сервер</p>
+    <h2 id="live-name">FOB</h2>
+    <div class="live-stats">
+      <p><span>Онлайн</span><b id="live-players">—</b></p>
+      <p><span>Карта</span><b id="live-map">—</b></p>
+      <p><span>Режим</span><b id="live-mode">—</b></p>
+    </div>
+    <div class="live-score" id="live-score"></div>
+    <p class="note" id="live-note">Открывается в браузере серверов WARDOGS.</p>
+  </section>
   <section class="wrap season-lock">
     <div>
       <p class="eyebrow">Сезон 2 · навсегда</p>
@@ -71,6 +82,49 @@ const season = import.meta.env.GAME_SEASON ?? "03";
     };
     tick();
     setInterval(tick, 30000);
+    const liveName = document.querySelector("#live-name");
+    const livePlayers = document.querySelector("#live-players");
+    const liveMap = document.querySelector("#live-map");
+    const liveMode = document.querySelector("#live-mode");
+    const liveScore = document.querySelector("#live-score");
+    const liveNote = document.querySelector("#live-note");
+    const paintServer = (data: {
+      name?: string;
+      players?: number;
+      maxPlayers?: number;
+      map?: string;
+      mode?: string;
+      factions?: Array<{ name?: string; score?: number }>;
+    }) => {
+      if (liveName) liveName.textContent = data.name || "FOB";
+      if (livePlayers) livePlayers.textContent = `${data.players ?? 0}/${data.maxPlayers || "?"}`;
+      if (liveMap) liveMap.textContent = data.map || "—";
+      if (liveMode) liveMode.textContent = data.mode || "—";
+      if (liveScore) {
+        const rows = Array.isArray(data.factions) ? data.factions : [];
+        const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+        liveScore.innerHTML = rows.map((row) => `<i>${esc(String(row.name ?? ""))} <b>${Number(row.score) || 0}</b></i>`).join("");
+      }
+      if (liveNote) liveNote.textContent = "В браузере серверов WARDOGS найди это название.";
+    };
+    const pullServer = async () => {
+      for (const url of ["/api/server", "/live-server.php"]) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) continue;
+          const data = await response.json();
+          if (data && data.name) {
+            paintServer(data);
+            return;
+          }
+        } catch {
+          // следующий источник
+        }
+      }
+      if (liveNote) liveNote.textContent = "Сервер сейчас не отвечает.";
+    };
+    pullServer();
+    setInterval(pullServer, 30000);
     if (hall && Date.now() < start) {
       fetch("/api/ratings?sort=level")
         .then((response) => response.json())
