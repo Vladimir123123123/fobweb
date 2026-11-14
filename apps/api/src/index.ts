@@ -5,6 +5,7 @@ import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
+import { SEARCH_TAGS } from "./seo.js";
 import { fightSnapshot, ingestCombat } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
@@ -27,7 +28,7 @@ const SORTS: Record<string, string> = {
   kd: "server_kd",
 };
 
-const PUBLIC_EVENTS = new Set(["page_view", "discord_click", "share_build", "squad_banner_click"]);
+const PUBLIC_EVENTS = new Set(["page_view", "discord_click", "share_build", "squad_banner_click", "search_land"]);
 const PROFILE_ACCENTS = new Set(["orange", "gold", "blue", "red", "green"]);
 const hits = new Map<string, { n: number; at: number }>();
 
@@ -813,6 +814,7 @@ app.get("/api/me", async (request) => {
   return {
     user: rows[0] ?? null,
     admin,
+    adminPath: admin ? `/g/${config.adminPath}` : "",
     discordLink: Boolean(config.discordId && config.discordSecret),
     careerConnect: Boolean(config.trackerKey && config.trackerClientId),
   };
@@ -1644,6 +1646,15 @@ app.get("/api/admin/overview", async (request, reply) => {
     ORDER BY count DESC
     LIMIT 12
   `;
+  const searchHits = await sql`
+    SELECT utm_source AS engine, utm_campaign AS query, CAST(COUNT(*) AS SIGNED) AS count
+    FROM events
+    WHERE name = 'search_land' AND utm_campaign IS NOT NULL AND utm_campaign <> ''
+      AND created_at > NOW() - INTERVAL 30 DAY
+    GROUP BY engine, query
+    ORDER BY count DESC
+    LIMIT 30
+  `;
   const players = await sql`
     SELECT steam_id, persona, country, cis_opt_in, hide_leaderboard, last_login_at
     FROM users
@@ -1706,6 +1717,8 @@ app.get("/api/admin/overview", async (request, reply) => {
     squadBannerClicks7d: byName.squad_banner_click ?? 0,
     days,
     sources,
+    searchTags: SEARCH_TAGS,
+    searchHits,
     players,
     squads,
     assets,

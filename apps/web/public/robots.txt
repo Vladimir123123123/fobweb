@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /g/
+Disallow: /auth/
+Disallow: /api/
+Disallow: /discord
+
+Sitemap: https://fob-wd.ru/sitemap.xml

@@ -8,9 +8,19 @@ interface Props {
   fit?: boolean;
   wide?: boolean;
 }
-const { title, description = "Сообщество WARDOGS в СНГ: сборки, техника и рейтинг игроков, которые вошли через Steam.", robots, fit = false, wide = false } = Astro.props;
+const { title, description = "Сервер FOB сообщества WARDOGS в СНГ: 50 на 50, сборки, оружие, техника, рейтинг и сквады.", robots, fit = false, wide = false } = Astro.props;
 const metrika = import.meta.env.PUBLIC_METRIKA_ID ?? "";
 const path = Astro.url.pathname;
+const canonical = `https://fob-wd.ru${path === "/" ? "/" : path}`;
+const keywords = "WARDOGS сервер СНГ, FOB WARDOGS, сервер WARDOGS 50 на 50, WARDOGS без снайперов, рейтинг игроков WARDOGS, сборки WARDOGS, оружие WARDOGS, техника WARDOGS, сквад WARDOGS";
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "FOB · WARDOGS СНГ",
+  url: "https://fob-wd.ru/",
+  description,
+  inLanguage: "ru",
+});
 ---
 <html lang="ru">
   <head>
@@ -18,18 +28,20 @@ const path = Astro.url.pathname;
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <meta name="keywords" content={keywords} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="ru_RU" />
+    <meta property="og:site_name" content="FOB · WARDOGS СНГ" />
+    <meta property="og:image" content="https://fob-wd.ru/brand/banner.jpg" />
     {robots && <meta name="robots" content={robots} />}
     <link rel="icon" href="/brand/logo.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap" />
-    {metrika && (
-      <script is:inline define:vars={{ metrika }}>{`
-        (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-        m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-        (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-        ym(${metrika}, "init", { clickmap:true, trackLinks:true, accurateTrackBounce:true });
-      `}</script>
-    )}
+    <script type="application/ld+json" is:inline set:html={jsonLd}></script>
   </head>
   <body class:list={{ fit, wide }} data-metrika={metrika}>
     <header class="topbar">
@@ -54,8 +66,16 @@ const path = Astro.url.pathname;
       <slot />
     </main>
     <footer class="wrap foot">
-      Неофициальный фан-сайт. Цифры предметов взяты из файлов игры, билд <span id="build">25937608</span>. <a href="https://wardogstracker.gg" rel="noopener">Data from WARDOGS Tracker</a>.
+      <p>Неофициальный фан-сайт. 18+. Цифры предметов взяты из файлов игры, билд <span id="build">25937608</span>. <a href="https://wardogstracker.gg" rel="noopener">Data from WARDOGS Tracker</a>.</p>
+      <p class="foot-links"><a href="/privacy">Конфиденциальность</a> · <a href="/terms">Соглашение</a> · <a href="/discord">Discord</a></p>
     </footer>
+    <div class="consent" id="consent" hidden>
+      <p>Сессия Steam нужна для входа. С согласием сайт считает визиты и подключает Яндекс.Метрику. <a href="/privacy">Политика</a></p>
+      <div>
+        <button class="btn small" id="consent-all" type="button">Согласен</button>
+        <button class="btn ghost small" id="consent-need" type="button">Только вход</button>
+      </div>
+    </div>
     <script>
       import "../scripts/site.ts";
     </script>
