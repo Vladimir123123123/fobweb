@@ -226,10 +226,14 @@ p { color: var(--muted); line-height: 1.55; }
   border: 1px solid var(--line);
 }
 .season-lock {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 28px;
+  display: block;
   padding: 22px 0 48px;
+}
+#fight-teams {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 28px;
+  margin-top: 8px;
 }
 .season-lock h2 { margin: 0 0 8px; font-size: 22px; }
 .season-lock .lead { margin: 0 0 12px; }
@@ -237,7 +241,15 @@ p { color: var(--muted); line-height: 1.55; }
 .hot { display: none; align-items: center; gap: 6px; margin: 0; color: #ff3b3b; font-weight: 700; letter-spacing: 0.04em; }
 .hot:not([hidden]) { display: inline-flex; }
 .hot b { font-size: 22px; line-height: 1; }
-.fight-team { margin-top: 14px; }
+.fight-team { margin-top: 0; }
+.season-archive { margin-top: 36px; padding-bottom: 12px; }
+.season-archive h2 { margin: 0 0 12px; font-size: 22px; }
+.season-archive .pod strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.25;
+}
 .fight-team h3 {
   display: flex;
   align-items: center;
@@ -1287,9 +1299,10 @@ body.fit .foot { padding: 8px 0 10px; }
   .dossier-level b { font-size: 40px; }
   .podium, .podium[data-n="2"], .podium[data-n="3"] { grid-template-columns: 1fr; }
   .pod, .pod-1, .pod-2, .pod-3 { order: 0; }
-  .season-lock .pod-1 { order: 1; }
-  .season-lock .pod-2 { order: 2; }
-  .season-lock .pod-3 { order: 3; }
+  .season-lock .pod-1, .season-archive .pod-1 { order: 1; }
+  .season-lock .pod-2, .season-archive .pod-2 { order: 2; }
+  .season-lock .pod-3, .season-archive .pod-3 { order: 3; }
+  #fight-teams { grid-template-columns: 1fr; }
   .pod b, .pod-1 b { font-size: 36px; }
   .ladder .who .name { max-width: 140px; }
   .ladder th:nth-child(1), .ladder td:nth-child(1),
