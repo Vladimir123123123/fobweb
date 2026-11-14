@@ -38,6 +38,8 @@ CREATE INDEX IF NOT EXISTS snapshots_player ON snapshots (steam_id, created_at);
 
 CREATE TABLE IF NOT EXISTS server_combat (
   steam_id varchar(20) PRIMARY KEY,
+  persona varchar(80),
+  avatar varchar(300),
   kills int NOT NULL DEFAULT 0,
   deaths int NOT NULL DEFAULT 0,
   match_kills int NOT NULL DEFAULT 0,
@@ -45,6 +47,18 @@ CREATE TABLE IF NOT EXISTS server_combat (
   faction varchar(40),
   seen_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS server_matches (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  steam_id varchar(20) NOT NULL,
+  persona varchar(80),
+  kills int NOT NULL DEFAULT 0,
+  deaths int NOT NULL DEFAULT 0,
+  faction varchar(40),
+  ended_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS server_matches_player ON server_matches (steam_id, ended_at);
 
 CREATE TABLE IF NOT EXISTS sync_sessions (
   steam_id varchar(20) PRIMARY KEY,

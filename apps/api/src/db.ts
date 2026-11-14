@@ -95,6 +95,8 @@ export async function migrate() {
   for (const statement of statements) await sql.unsafe(statement);
   await ensureColumn("users", "motto", "varchar(80) NULL");
   await ensureColumn("users", "accent", "varchar(16) NULL");
+  await ensureColumn("server_combat", "persona", "varchar(80) NULL");
+  await ensureColumn("server_combat", "avatar", "varchar(300) NULL");
   // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
   await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
   await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;

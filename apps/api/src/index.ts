@@ -898,19 +898,35 @@ app.get("/api/ratings", async (request) => {
   const season = text(query.season, 20) || config.season;
   const q = text(query.q, 40).replace(/[%_]/g, "");
   if (!/^[a-z_]+$/.test(column)) return { season, sort, players: [] };
-  // В топе сезона только те, у кого есть снимок этого сезона.
+  // Снимок сезона или игрок, которого видели на нашем сервере. Скрытый профиль сайта не показываем.
   const rows = await sql.unsafe(
-    `SELECT u.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
+    `SELECT ids.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
-            s.created_at, u.persona, u.avatar, u.country,
+            s.created_at, COALESCE(u.persona, c.persona) AS persona, COALESCE(u.avatar, c.avatar) AS avatar, u.country,
             c.kills AS server_kills, c.deaths AS server_deaths, c.faction AS server_faction,
             CASE
               WHEN c.steam_id IS NULL THEN NULL
               WHEN c.deaths = 0 THEN c.kills
               ELSE ROUND(c.kills / c.deaths, 2)
             END AS server_kd
-     FROM users u
-     JOIN (
+     FROM (
+       SELECT u.steam_id
+       FROM users u
+       JOIN (
+         SELECT steam_id, MAX(created_at) AS created_at
+         FROM snapshots
+         WHERE season = ?
+         GROUP BY steam_id
+       ) latest ON latest.steam_id = u.steam_id
+       WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
+       UNION
+       SELECT c.steam_id
+       FROM server_combat c
+       LEFT JOIN users u ON u.steam_id = c.steam_id
+       WHERE u.steam_id IS NULL OR (u.hide_leaderboard = 0 AND u.cis_opt_in = 1)
+     ) ids
+     LEFT JOIN users u ON u.steam_id = ids.steam_id
+     LEFT JOIN (
        SELECT s.*
        FROM snapshots s
        JOIN (
@@ -920,13 +936,12 @@ app.get("/api/ratings", async (request) => {
          GROUP BY steam_id
        ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
        WHERE s.season = ?
-     ) s ON s.steam_id = u.steam_id
-     LEFT JOIN server_combat c ON c.steam_id = u.steam_id
-     WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
-       AND (? = '' OR u.persona LIKE ? OR u.steam_id LIKE ?)
-     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, u.persona ASC
+     ) s ON s.steam_id = ids.steam_id
+     LEFT JOIN server_combat c ON c.steam_id = ids.steam_id
+     WHERE (? = '' OR COALESCE(u.persona, c.persona) LIKE ? OR ids.steam_id LIKE ?)
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, COALESCE(u.persona, c.persona) ASC
      LIMIT 200`,
-    [season, season, season, q, `%${q}%`, `%${q}%`],
+    [season, season, season, season, q, `%${q}%`, `%${q}%`],
   );
   return { season, sort, players: rows };
 });
@@ -938,7 +953,32 @@ app.get("/api/players/:steamId", async (request, reply) => {
     SELECT steam_id, persona, avatar, country, cis_opt_in, hide_leaderboard, discord_name, motto, accent, created_at
     FROM users WHERE steam_id = ${steamId}
   `;
-  if (!users.length) return notFound(reply);
+  if (!users.length) {
+    const seen = await sql<Array<Record<string, unknown>>>`
+      SELECT steam_id, persona, avatar, kills, deaths, faction,
+             CASE WHEN deaths = 0 THEN kills ELSE ROUND(kills / deaths, 2) END AS kd
+      FROM server_combat WHERE steam_id = ${steamId}
+    `;
+    if (!seen.length) return notFound(reply);
+    const combat = seen[0];
+    return {
+      user: {
+        steam_id: steamId,
+        persona: combat.persona,
+        avatar: combat.avatar,
+        country: null,
+        cis_opt_in: 1,
+        hide_leaderboard: 0,
+        discord_name: null,
+        motto: null,
+        accent: null,
+      },
+      history: [],
+      combat,
+      squad: null,
+      sync: null,
+    };
+  }
   const history = await sql`
     SELECT created_at, wardog_level, xp, cash, gold, unlocks, account_value,
            role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source
