@@ -375,9 +375,21 @@ p { color: var(--muted); line-height: 1.55; }
 .r50 .ring img, .r50 .ring span, .rank-key .r50 { border-color: #5b8def; }
 .r100 .ring img, .r100 .ring span, .rank-key .r100 { border-color: #c084fc; }
 .r200 .ring img, .r200 .ring span, .rank-key .r200 { border-color: #8b93a7; }
-.ladder-head { margin-bottom: 18px; }
-.ladder-head h1 { margin-bottom: 8px; }
-.ladder-head .lead { max-width: 52ch; margin: 0; }
+.ladder-head { margin-bottom: 12px; }
+.ladder-head h1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 28px;
+}
+.ladder-head h1 small {
+  color: var(--muted);
+  font-family: "Golos Text", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
 .ladder-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 16px; }
 .ladder-bar label { flex: 1 1 180px; max-width: 280px; }
 .ladder-bar .btn { min-height: 44px; }
@@ -818,16 +830,14 @@ th .th-ico-role,
 th .th-ico-gold,
 th .th-ico-level { width: 20px; height: 20px; }
 th:has(.th-ico) { text-align: center; padding-left: 6px; padding-right: 6px; }
+table.ratings th, table.ratings td { padding: 8px 6px; }
+table.ratings th {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
 table.ratings th:nth-child(n + 3),
 table.ratings td:nth-child(n + 3) { text-align: center; }
-table.ratings th:nth-child(4),
-table.ratings th:nth-child(5),
-table.ratings th:nth-child(6),
-table.ratings th:nth-child(8) {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
 tbody tr { transition: background 0.15s ease; }
 tbody tr:hover { background: rgba(47, 107, 255, 0.08); }
 .scroll { overflow-x: auto; border: 1px solid var(--line); }
