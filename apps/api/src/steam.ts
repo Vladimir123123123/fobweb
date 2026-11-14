@@ -37,6 +37,32 @@ export async function verifySteamLogin(query: Record<string, unknown>) {
   }
 }
 
+const WARDOGS_APP = 1867240;
+const hoursCache = new Map<string, { hours: number | null; at: number }>();
+
+/** Часы в WARDOGS. null — профиль закрыт или Steam не ответил. */
+export async function wardogsHours(steamId: string): Promise<number | null> {
+  const cached = hoursCache.get(steamId);
+  if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) return cached.hours;
+  if (!config.steamKey) return null;
+  try {
+    const url = new URL("https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/");
+    url.searchParams.set("key", config.steamKey);
+    url.searchParams.set("steamid", steamId);
+    url.searchParams.set("include_played_free_games", "1");
+    url.searchParams.set("appids_filter[0]", String(WARDOGS_APP));
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return null;
+    const payload = await response.json() as { response?: { games?: Array<{ appid?: number; playtime_forever?: number }> } };
+    const game = payload.response?.games?.find((row) => row.appid === WARDOGS_APP);
+    const hours = game?.playtime_forever == null ? null : Math.round(game.playtime_forever / 6) / 10;
+    hoursCache.set(steamId, { hours, at: Date.now() });
+    return hours;
+  } catch {
+    return null;
+  }
+}
+
 export async function steamProfile(steamId: string) {
   if (!config.steamKey) return { persona: null, avatar: null, country: null };
   try {

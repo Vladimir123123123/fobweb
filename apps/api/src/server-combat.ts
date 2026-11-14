@@ -1,6 +1,97 @@
 import { config } from "./config.js";
 import { sql } from "./db.js";
-import { steamProfile } from "./steam.js";
+import { steamProfile, wardogsHours } from "./steam.js";
+
+const HOT_KILLS = 15;
+const TEN_MINUTES = 10 * 60 * 1000;
+const killTicks: Array<{ at: number; kills: number }> = [];
+const matchKills = new Map<string, number>();
+let lastRoster: RosterPlayer[] = [];
+
+function sideOf(name: string) {
+  const key = name.toLowerCase();
+  if (key.includes("lone") || key.includes("star")) return "lonestar";
+  if (key.includes("valk")) return "valkyra";
+  if (key.includes("mant")) return "manticore";
+  return key || "other";
+}
+
+function noteKills(players: RosterPlayer[]) {
+  let gained = 0;
+  const seen = new Set<string>();
+  for (const player of players) {
+    seen.add(player.steamId);
+    const previous = matchKills.get(player.steamId);
+    if (previous !== undefined) gained += player.kills >= previous ? player.kills - previous : player.kills;
+    matchKills.set(player.steamId, player.kills);
+  }
+  for (const steamId of matchKills.keys()) {
+    if (!seen.has(steamId)) matchKills.delete(steamId);
+  }
+  const now = Date.now();
+  if (gained > 0) killTicks.push({ at: now, kills: gained });
+  const cutoff = now - TEN_MINUTES;
+  while (killTicks.length && killTicks[0].at < cutoff) killTicks.shift();
+}
+
+export function killsInTenMinutes() {
+  const cutoff = Date.now() - TEN_MINUTES;
+  return killTicks.filter((tick) => tick.at >= cutoff).reduce((sum, tick) => sum + tick.kills, 0);
+}
+
+async function hoursOf(steamIds: string[]) {
+  const found = new Map<string, number | null>();
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < steamIds.length) {
+      const steamId = steamIds[cursor];
+      cursor += 1;
+      found.set(steamId, await wardogsHours(steamId));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, steamIds.length) }, worker));
+  return found;
+}
+
+export async function fightSnapshot(factions: Array<{ name: string; score: number }>) {
+  const kills10 = killsInTenMinutes();
+  const teams = new Map<string, { name: string; score: number; players: RosterPlayer[]; hours: Array<number | null> }>();
+  const seed = factions.length ? factions : [
+    { name: "Lonestar", score: 0 },
+    { name: "Valkyra", score: 0 },
+    { name: "Manticore", score: 0 },
+  ];
+  for (const faction of seed) {
+    teams.set(sideOf(faction.name), { name: faction.name, score: faction.score, players: [], hours: [] });
+  }
+  const hours = lastRoster.length ? await hoursOf(lastRoster.map((player) => player.steamId)) : new Map<string, number | null>();
+  for (const player of lastRoster) {
+    const key = sideOf(player.faction);
+    const team = teams.get(key) ?? { name: player.faction || "Без стороны", score: 0, players: [], hours: [] };
+    team.players.push(player);
+    team.hours.push(hours.get(player.steamId) ?? null);
+    teams.set(key, team);
+  }
+  const order = ["lonestar", "valkyra", "manticore"];
+  return {
+    hot: kills10 >= HOT_KILLS,
+    kills10,
+    teams: [...teams.entries()]
+      .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+      .map(([, team]) => {
+        const known = team.hours.filter((value): value is number => value != null);
+        const avgHours = known.length ? Math.round(known.reduce((sum, value) => sum + value, 0) / known.length) : null;
+        return {
+          name: team.name,
+          score: team.score,
+          avgHours,
+          players: team.players
+            .sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name))
+            .map((player) => ({ name: player.name || player.steamId, steamId: player.steamId, kills: player.kills, deaths: player.deaths })),
+        };
+      }),
+  };
+}
 
 /** Матч обнуляет счётчик. Пока он растёт — прибавляем разницу, после сброса — новые очки. */
 export function applyMatchDelta(lifetime: number, previousMatch: number, now: number): { lifetime: number; match: number } {
@@ -43,6 +134,8 @@ async function roster(): Promise<RosterPlayer[]> {
 
 export async function ingestCombat(): Promise<number> {
   const players = await roster();
+  lastRoster = players;
+  noteKills(players);
   for (const player of players) {
     const existing = await sql<Array<{ kills: number; deaths: number; match_kills: number; match_deaths: number; persona: string | null; avatar: string | null }>>`
       SELECT kills, deaths, match_kills, match_deaths, persona, avatar FROM server_combat WHERE steam_id = ${player.steamId}

@@ -43,19 +43,15 @@ const season = import.meta.env.GAME_SEASON ?? "03";
         </a>
       </div>
     </div>
-    <div>
-      <p class="eyebrow">Лимитед · 50 на 50</p>
-      <h2>Сбор на сервер</h2>
-      <p class="lead">Цель <b>11 000 ₽</b>. Основатель внёс <b>3 000 ₽</b>.</p>
-      <p class="fund-bar" aria-hidden="true"><span style="width: 27.27%"></span></p>
-      <p class="note">На камне 3 000 ₽ из 11 000 ₽.</p>
-      <div class="stone">
-        <p>FOB</p>
-        <h3>Пожертвовали</h3>
-        <ul>
-          <li>Vladimir (9hzkak)<small>3 000 ₽</small></li>
-        </ul>
+    <div id="fight">
+      <div class="fight-head">
+        <div>
+          <p class="eyebrow">Кто на сервере</p>
+          <h2>Живые убийства</h2>
+        </div>
+        <p class="hot" id="fight-hot" hidden><b>☠</b> HOT · тут мясо</p>
       </div>
+      <div id="fight-teams"></div>
     </div>
   </section>
   <script>
@@ -83,6 +79,41 @@ const season = import.meta.env.GAME_SEASON ?? "03";
         liveScore.innerHTML = rows.map((row) => `<i>${esc(String(row.name ?? ""))} <b>${Number(row.score) || 0}</b></i>`).join("");
       }
       if (liveNote) liveNote.textContent = "В браузере серверов WARDOGS найди это название.";
+      paintFight(data);
+    };
+    const marks: Record<string, string> = { lone: "/brand/factions/ls.png", valk: "/brand/factions/vk.png", mant: "/brand/factions/mc.png" };
+    const markOf = (name: string) => {
+      const key = name.toLowerCase();
+      const found = Object.keys(marks).find((part) => key.includes(part));
+      return found ? marks[found] : "";
+    };
+    const fightHot = document.querySelector<HTMLElement>("#fight-hot");
+    const fightTeams = document.querySelector("#fight-teams");
+    const paintFight = (data: {
+      hot?: boolean;
+      teams?: Array<{ name?: string; avgHours?: number | null; players?: Array<{ name?: string; steamId?: string; kills?: number }> }>;
+    }) => {
+      if (fightHot) fightHot.hidden = !data.hot;
+      if (!fightTeams || !Array.isArray(data.teams)) return;
+      const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+      fightTeams.innerHTML = data.teams.map((team) => {
+        const name = String(team.name || "Сторона");
+        const icon = markOf(name);
+        const people = Array.isArray(team.players) ? team.players : [];
+        const hours = !people.length ? "" : team.avgHours == null ? "часы скрыты" : `в среднем ${team.avgHours} ч`;
+        const rows = people.length
+          ? people.map((player) => {
+            const label = esc(String(player.name || "игрок"));
+            const id = String(player.steamId || "");
+            const who = /^\d{17}$/.test(id) ? `<a href="/p?id=${id}">${label}</a>` : label;
+            return `<p class="fight-row">${who}<b>${Number(player.kills) || 0} уб.</b></p>`;
+          }).join("")
+          : `<p class="note">никого</p>`;
+        return `<section class="fight-team">
+          <h3>${icon ? `<img src="${icon}" alt="" />` : ""}${esc(name)}<small>${hours}</small></h3>
+          ${rows}
+        </section>`;
+      }).join("");
     };
     const pullServer = async () => {
       for (const url of ["/api/server", "/live-server.php"]) {

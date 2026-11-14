@@ -194,9 +194,10 @@ p { color: var(--muted); line-height: 1.55; }
 .stage .btn.ghost { border-color: transparent; padding-left: 0; }
 .server-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 28px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  max-width: 760px;
   margin-top: 22px;
   padding: 14px 16px;
   background: rgba(7, 8, 12, 0.78);
@@ -206,7 +207,7 @@ p { color: var(--muted); line-height: 1.55; }
 .server-card h2 { margin: 0; font-size: 18px; font-weight: 500; line-height: 1.25; }
 .server-card .note { margin: 4px 0 0; }
 .server-card .live-score { grid-column: 1 / -1; margin-top: 0; }
-.live-stats { display: flex; flex-wrap: wrap; gap: 18px; justify-content: flex-end; max-width: 420px; }
+.live-stats { display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: flex-start; margin-top: 10px; }
 .live-stats p { margin: 0; }
 .live-stats span {
   display: block;
@@ -216,7 +217,7 @@ p { color: var(--muted); line-height: 1.55; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.live-stats b { font-size: 22px; font-weight: 500; }
+.live-stats b { font-size: 16px; font-weight: 500; }
 .live-score { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .live-score:empty { display: none; }
 .live-score i {
@@ -232,6 +233,33 @@ p { color: var(--muted); line-height: 1.55; }
 }
 .season-lock h2 { margin: 0 0 8px; font-size: 22px; }
 .season-lock .lead { margin: 0 0 12px; }
+.fight-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.hot { display: none; align-items: center; gap: 6px; margin: 0; color: #ff3b3b; font-weight: 700; letter-spacing: 0.04em; }
+.hot:not([hidden]) { display: inline-flex; }
+.hot b { font-size: 22px; line-height: 1; }
+.fight-team { margin-top: 14px; }
+.fight-team h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.fight-team h3 small { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 500; }
+.fight-team img { width: 22px; height: 22px; object-fit: contain; }
+.fight-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14px;
+}
+.fight-row a { color: inherit; text-decoration: none; }
+.fight-row b { font-variant-numeric: tabular-nums; }
 .season-lock .pod strong {
   white-space: normal;
   overflow: visible;

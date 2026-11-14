@@ -5,7 +5,7 @@ import { dumpDatabase } from "./backup.js";
 import { migrate, sql } from "./db.js";
 import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./media.js";
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
-import { ingestCombat } from "./server-combat.js";
+import { fightSnapshot, ingestCombat } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
@@ -548,7 +548,8 @@ app.get("/api/server", async (_request, reply) => {
   try {
     const server = await liveServer();
     if (!server) return reply.code(503).send({ error: "offline" });
-    return server;
+    const fight = await fightSnapshot(server.factions);
+    return { ...server, ...fight };
   } catch {
     return reply.code(503).send({ error: "offline" });
   }
