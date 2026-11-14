@@ -16,6 +16,11 @@ import Base from "../layouts/Base.astro";
     return value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
   }
   const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU").format(value);
+  function kdText(value: unknown) {
+    if (value === null || value === undefined || value === "") return "—";
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  }
   function when(value: unknown) {
     const date = new Date(String(value ?? ""));
     if (Number.isNaN(date.getTime())) return "";
@@ -125,6 +130,7 @@ import Base from "../layouts/Base.astro";
       const accent = accents.find((name) => name === user.accent) ?? "";
       const marks: Record<string, string> = { orange: "#ff4d1c", gold: "#e4b04a", blue: "#6ea2ff", red: "#ff5a4a", green: "#3dba7a" };
       const motto = String(user.motto ?? "").trim();
+      const combat = profile.combat as { kills?: number | null; deaths?: number | null; kd?: number | string | null; faction?: string | null } | null;
       const syncNote = sync === "same"
         ? "Цифры те же, что уже были. Свежее игра отдаст, если закрыть WARDOGS и снять ещё раз."
         : sync === "game_running"
@@ -175,6 +181,12 @@ import Base from "../layouts/Base.astro";
             <div><span>Открытия</span><b>${latest?.unlocks ?? "—"}</b></div>
             <div><span>Стоимость</span><b>${money(latest?.account_value as number | null)}</b></div>
             <div><span>Снимков</span><b>${history.length}</b></div>
+          </section>
+          <section class="dossier-meters server">
+            <div><span>Убийства</span><b>${num(combat?.kills)}</b></div>
+            <div><span>Смерти</span><b>${num(combat?.deaths)}</b></div>
+            <div><span>К/Д</span><b>${kdText(combat?.kd)}</b></div>
+            <div><span>Фракция</span><b>${esc(String(combat?.faction ?? "").trim()) || "—"}</b></div>
           </section>
           <section class="dossier-split">
             <div class="panel">

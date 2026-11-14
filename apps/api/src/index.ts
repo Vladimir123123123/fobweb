@@ -954,12 +954,19 @@ app.get("/api/players/:steamId", async (request, reply) => {
     WHERE m.steam_id = ${steamId} AND m.status = 'member' AND sq.status = 'approved'
     LIMIT 1
   `;
+  const combatRows = await sql<Array<{ kills: number; deaths: number; kd: number | string | null; faction: string | null }>>`
+    SELECT kills, deaths, faction,
+           CASE WHEN deaths = 0 THEN kills ELSE ROUND(kills / deaths, 2) END AS kd
+    FROM server_combat
+    WHERE steam_id = ${steamId}
+  `;
   const sync = await sql`SELECT status, expires_at, updated_at FROM sync_sessions WHERE steam_id = ${steamId}`;
   const picture = (file: string | null) => file && /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(file) ? `/api/media/${file}` : "";
   const squad = squads[0];
   return {
     user: users[0],
     history,
+    combat: combatRows[0] ?? null,
     squad: squad ? {
       id: squad.id,
       name: squad.name,
