@@ -140,8 +140,13 @@ import Base from "../layouts/Base.astro";
         headshots?: number | null; headshotPct?: number | null; longest?: number | null; average?: number | null;
         bestMatch?: number | null; matches?: number | null; perMatch?: number | null; faction?: string | null;
         teamkills?: number | null; enemy?: { name?: string; count?: number } | null; target?: { name?: string; count?: number } | null;
-        weapons?: Array<{ name?: string; kills?: number; headshots?: number }>; since?: string | null; last?: string | null;
+        weapons?: Array<{ name?: string; kills?: number; headshots?: number }>; winrate?: number | null;
+        history?: Array<{ endedAt?: string | null; server?: string; map?: string; minutes?: number | null; faction?: string; result?: string; place?: number | null; field?: number | null; kills?: number; deaths?: number; kd?: number | null; headshots?: number; teamkills?: number; weapon?: string }>;
+        since?: string | null; last?: string | null;
       } | null;
+      const resultLabel = (result: string | undefined) => result === "win" ? "Выиграно" : result === "loss" ? "Потеряно" : result === "leave" ? "Досрочный выход" : "—";
+      const resultClass = (result: string | undefined) => result === "win" ? "win" : result === "loss" ? "loss" : "";
+      const matches = combat?.history ?? [];
       const factionTone = (name: string) => {
         const key = name.toLowerCase();
         if (key.includes("valk")) return "valk";
@@ -230,6 +235,7 @@ import Base from "../layouts/Base.astro";
               <div><span>Матчи</span><b>${combat.matches == null ? "—" : `${num(combat.matches)} <small>по ${combat.perMatch ?? "—"} убийств каждый</small>`}</b></div>
               <div><span>Основная сторона</span><b class="${factionTone(String(combat.faction || ""))}">${esc(String(combat.faction || "").trim()) || "—"}</b></div>
               <div><span>Убийства своих</span><b>${meter(combat.teamkills)}</b></div>
+              <div><span>Винрейт</span><b>${combat.winrate == null ? "—" : `${Number(combat.winrate).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`}</b></div>
             </div>
             <div class="fight-card-rivals">
               <p class="eyebrow">Соперники</p>
@@ -241,7 +247,36 @@ import Base from "../layouts/Base.astro";
               ${weapons.map((gun) => `<p><i style="width:${Math.round(((Number(gun.kills) || 0) / topGun) * 100)}%"></i><b>${esc(gun.name || "неизвестно")}</b><span>${num(gun.kills)} · ${num(gun.headshots)} HS</span></p>`).join("")}
             </div>` : `<p class="note">Оружие, хедшоты и дистанция появятся со следующими убийствами, которые пришлёт сервер.</p>`}
             ${played ? `<p class="note">${played}</p>` : ""}
-          </section>` : ""}
+          </section>
+          ${matches.length ? `<section class="match-log">
+            <header>
+              <p class="eyebrow">Матчи</p>
+              <p>Этот сервер, хранить навсегда</p>
+            </header>
+            <div class="match-scroll">
+              <table>
+                <thead>
+                  <tr><th>Завершено</th><th>Сервер</th><th>Карта</th><th>Сторона</th><th>Результат</th><th>Место</th><th>У</th><th>С</th><th>К/Д</th><th>ХШ</th><th>ТК</th><th>Оружие</th></tr>
+                </thead>
+                <tbody>
+                  ${matches.map((item) => `<tr>
+                    <td>${esc(stamp(item.endedAt) || "—")}</td>
+                    <td>${esc(item.server || "—")}</td>
+                    <td>${esc(item.map || "—")}${item.minutes ? ` · ${num(item.minutes)} мин` : ""}</td>
+                    <td class="${factionTone(String(item.faction || ""))}">${esc(item.faction || "—")}</td>
+                    <td class="${resultClass(item.result)}">${resultLabel(item.result)}</td>
+                    <td>${item.place ? `#${num(item.place)}${item.field ? ` из ${num(item.field)}` : ""}` : "—"}</td>
+                    <td>${num(item.kills)}</td>
+                    <td>${num(item.deaths)}</td>
+                    <td>${item.kd == null ? "—" : Number(item.kd).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>${num(item.headshots)}</td>
+                    <td>${num(item.teamkills)}</td>
+                    <td>${esc(item.weapon || "—")}</td>
+                  </tr>`).join("")}
+                </tbody>
+              </table>
+            </div>
+          </section>` : ""}` : ""}
           <section class="dossier-split">
             <div class="panel">
               <p class="eyebrow">Классы</p>

@@ -18,8 +18,27 @@ export type CombatCard = {
   enemy: { name: string; count: number } | null;
   target: { name: string; count: number } | null;
   weapons: Array<{ name: string; kills: number; headshots: number }>;
+  winrate: number | null;
+  history: PlayedMatch[];
   since: string | null;
   last: string | null;
+};
+
+export type PlayedMatch = {
+  endedAt: string | null;
+  server: string;
+  map: string;
+  minutes: number | null;
+  faction: string;
+  result: string;
+  place: number | null;
+  field: number | null;
+  kills: number;
+  deaths: number;
+  kd: number | null;
+  headshots: number;
+  teamkills: number;
+  weapon: string;
 };
 
 function num(value: unknown) {
@@ -101,12 +120,49 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const teamRows = await sql<Array<{ n: number }>>`
     SELECT COUNT(*) AS n FROM server_kills WHERE killer_steam = ${steamId} AND teamkill = 1
   `;
+  const historyRows = await sql<Array<Record<string, unknown>>>`
+    SELECT ended_at, server_name, map_name, minutes, faction, result, place, field_size,
+           kills, deaths, headshots, teamkills, weapon
+    FROM played_matches
+    WHERE steam_id = ${steamId}
+    ORDER BY ended_at DESC
+    LIMIT 40
+  `;
+  const rateRows = await sql<Array<{ wins: number | null; decided: number | null; n: number; best: number | null }>>`
+    SELECT SUM(result = 'win') AS wins, SUM(result IN ('win', 'loss')) AS decided,
+           COUNT(*) AS n, MAX(kills) AS best
+    FROM played_matches
+    WHERE steam_id = ${steamId}
+  `;
+  const history = historyRows.map((item) => {
+    const kills = num(item.kills);
+    const deaths = num(item.deaths);
+    return {
+      endedAt: iso(item.ended_at),
+      server: String(item.server_name || ""),
+      map: String(item.map_name || ""),
+      minutes: item.minutes == null ? null : num(item.minutes),
+      faction: String(item.faction || ""),
+      result: String(item.result || ""),
+      place: item.place == null ? null : num(item.place),
+      field: item.field_size == null ? null : num(item.field_size),
+      kills,
+      deaths,
+      kd: kills + deaths > 0 ? Math.round((deaths ? kills / deaths : kills) * 100) / 100 : 0,
+      headshots: num(item.headshots),
+      teamkills: num(item.teamkills),
+      weapon: String(item.weapon || ""),
+    };
+  });
+  const decided = num(rateRows[0]?.decided);
+  const winrate = decided > 0 ? Math.round((num(rateRows[0]?.wins) / decided) * 1000) / 10 : null;
   const feedKills = num(shots[0]?.kills);
   const hasFeed = feedKills > 0;
   const playedNow = num(row.match_kills) > 0 || num(row.match_deaths) > 0;
-  const matchCount = num(finished[0]?.n) + (playedNow ? 1 : 0);
+  const logged = num(rateRows[0]?.n);
+  const matchCount = logged > 0 ? logged : num(finished[0]?.n) + (playedNow ? 1 : 0);
   const matches = matchCount > 0 ? matchCount : num(row.kills) + num(row.deaths) > 0 ? 1 : null;
-  const best = Math.max(num(finished[0]?.best), num(row.match_kills));
+  const best = Math.max(num(finished[0]?.best), num(row.match_kills), num(rateRows[0]?.best));
   const kills = num(row.kills);
   const deaths = num(row.deaths);
   const headshots = hasFeed ? num(shots[0]?.headshots) : null;
@@ -132,6 +188,8 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
       kills: num(gun.kills),
       headshots: num(gun.headshots),
     })) : [],
+    winrate,
+    history,
     since: iso(row.first_seen),
     last: iso(row.seen_at),
   };

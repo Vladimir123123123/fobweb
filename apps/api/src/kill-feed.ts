@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { absorbFeed } from "./match-history.js";
 import { sql } from "./db.js";
 
 const HEADSHOT = "Headshot";
@@ -159,6 +160,7 @@ export async function acceptFeed(body: unknown) {
   }
   while (recent.length > 40) recent.pop();
   while (seen.size > 400) seen.clear();
+  await absorbFeed(body);
   return rows.length;
 }
 

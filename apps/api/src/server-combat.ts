@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { sql } from "./db.js";
 import { recentKills } from "./kill-feed.js";
+import { rememberRoster } from "./roster-cache.js";
 import { steamProfile, wardogsHours } from "./steam.js";
 
 const HOT_KILLS = 15;
@@ -109,6 +110,7 @@ export function playingFactions(factions: Array<{ name: string; score: number }>
 
 export function rememberLive(factions: Array<{ name: string; score: number }>, players: RosterPlayer[]) {
   pushedRoster = { at: Date.now(), factions, players };
+  rememberRoster(players);
   noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
 }
@@ -199,6 +201,7 @@ export async function ingestCombat(): Promise<number> {
   if (!config.rconHost || !config.rconPassword) return 0;
   const players = await roster();
   lastRoster = players;
+  rememberRoster(players);
   noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
   for (const player of players) {

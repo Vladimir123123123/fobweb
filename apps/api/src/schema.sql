@@ -66,6 +66,44 @@ CREATE TABLE IF NOT EXISTS server_kills (
 
 CREATE INDEX IF NOT EXISTS server_kills_killer ON server_kills (killer_steam);
 CREATE INDEX IF NOT EXISTS server_kills_victim ON server_kills (victim_steam);
+CREATE INDEX IF NOT EXISTS server_kills_match ON server_kills (match_id);
+
+CREATE TABLE IF NOT EXISTS match_clock (
+  match_id varchar(80) PRIMARY KEY,
+  map_name varchar(80) NOT NULL DEFAULT '',
+  server_name varchar(80) NOT NULL DEFAULT '',
+  state varchar(40) NOT NULL DEFAULT '',
+  started_at datetime(3) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS match_presence (
+  match_id varchar(80) NOT NULL,
+  steam_id varchar(20) NOT NULL,
+  name varchar(80) NOT NULL DEFAULT '',
+  faction varchar(40) NOT NULL DEFAULT '',
+  left_at datetime(3) NULL,
+  PRIMARY KEY (match_id, steam_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS played_matches (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  steam_id varchar(20) NOT NULL,
+  match_key varchar(80) NOT NULL,
+  ended_at datetime(3) NULL,
+  server_name varchar(80) NOT NULL DEFAULT '',
+  map_name varchar(80) NOT NULL DEFAULT '',
+  minutes int NULL,
+  faction varchar(40) NOT NULL DEFAULT '',
+  result varchar(16) NOT NULL DEFAULT '',
+  place int NULL,
+  field_size int NULL,
+  kills int NOT NULL DEFAULT 0,
+  deaths int NOT NULL DEFAULT 0,
+  headshots int NOT NULL DEFAULT 0,
+  teamkills int NOT NULL DEFAULT 0,
+  weapon varchar(80) NOT NULL DEFAULT '',
+  UNIQUE KEY played_match_player (steam_id, match_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS server_matches (
   id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,

@@ -1081,6 +1081,17 @@ tbody tr:hover { background: rgba(47, 107, 255, 0.08); }
 .fight-card-guns p { position: relative; display: flex; justify-content: space-between; gap: 12px; margin: 0; min-height: 22px; }
 .fight-card-guns i { position: absolute; left: 0; bottom: 0; height: 3px; background: #e4b04a; }
 .fight-card .note { margin: 10px 0 4px; }
+.match-log { margin-top: 14px; border: 1px solid var(--line); background: #10131a; }
+.match-log header { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px 0; color: var(--muted); font-size: 13px; }
+.match-scroll { overflow-x: auto; }
+.match-log table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: 13px; }
+.match-log th, .match-log td { padding: 10px 12px; text-align: left; white-space: nowrap; border-top: 1px solid var(--line); }
+.match-log th { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.match-log td.win { color: #3dba7a; }
+.match-log td.loss { color: #ff5a4a; }
+.match-log td.valk { color: #ff5a4a; }
+.match-log td.mant { color: #3dba7a; }
+.match-log td.lone { color: #6ea2ff; }
 .dossier-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .dossier-split h2 { margin-top: 0; }
 .dossier-split h2 em { font-size: inherit; letter-spacing: inherit; }

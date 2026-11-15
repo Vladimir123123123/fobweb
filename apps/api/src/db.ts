@@ -109,6 +109,11 @@ export async function migrate() {
     SET c.first_seen = m.first_at
     WHERE c.first_seen IS NULL OR m.first_at < c.first_seen
   `;
+  await sql`
+    INSERT IGNORE INTO played_matches (steam_id, match_key, ended_at, faction, kills, deaths)
+    SELECT steam_id, CONCAT('legacy-', id), ended_at, COALESCE(faction, ''), kills, deaths
+    FROM server_matches
+  `;
   // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
   await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
   await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;
