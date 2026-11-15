@@ -266,7 +266,7 @@ p { color: var(--muted); line-height: 1.55; }
 .crawl-track {
   display: flex;
   width: max-content;
-  animation: crawl 36s linear infinite;
+  animation: crawl 108s linear infinite;
 }
 .crawl-track span {
   padding: 0 28px;
