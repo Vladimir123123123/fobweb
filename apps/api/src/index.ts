@@ -8,6 +8,7 @@ import { clearSession, cookieString, createSession, readSession, writeCookies } 
 import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
 import { combatCard } from "./combat-card.js";
+import { bansFromPayload, punishmentsFor, rememberBans, syncBans } from "./punishments.js";
 import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
@@ -518,6 +519,7 @@ async function botPlayerPayload(steamId: string) {
     snapshot,
     primaryClass: primaryClassOf(snapshot),
     combat: await combatCard(steamId),
+    punishments: await punishmentsFor(steamId),
   };
 }
 
@@ -1005,7 +1007,28 @@ app.get("/api/players/:steamId", async (request, reply) => {
              CASE WHEN deaths = 0 THEN kills ELSE ROUND(kills / deaths, 2) END AS kd
       FROM server_combat WHERE steam_id = ${steamId}
     `;
-    if (!seen.length) return notFound(reply);
+    if (!seen.length) {
+      const punishments = await punishmentsFor(steamId);
+      if (!punishments.length) return notFound(reply);
+      return {
+        user: {
+          steam_id: steamId,
+          persona: "Игрок",
+          avatar: "",
+          country: null,
+          cis_opt_in: 1,
+          hide_leaderboard: 1,
+          discord_name: null,
+          motto: null,
+          accent: null,
+        },
+        history: [],
+        combat: null,
+        punishments,
+        squad: null,
+        sync: null,
+      };
+    }
     return {
       user: {
         steam_id: steamId,
@@ -1020,6 +1043,7 @@ app.get("/api/players/:steamId", async (request, reply) => {
       },
       history: [],
       combat: await combatCard(steamId),
+      punishments: await punishmentsFor(steamId),
       squad: null,
       sync: null,
     };
@@ -1046,6 +1070,7 @@ app.get("/api/players/:steamId", async (request, reply) => {
     user: users[0],
     history,
     combat: await combatCard(steamId),
+    punishments: await punishmentsFor(steamId),
     squad: squad ? {
       id: squad.id,
       name: squad.name,
@@ -1121,6 +1146,15 @@ app.post("/api/bot/live", async (request, reply) => {
   }).slice(0, 200) : [];
   rememberLive(factions, players);
   return { ok: true, players: players.length };
+});
+
+app.post("/api/bot/bans", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const body = request.body as { bans?: unknown } | null;
+  if (!body || !Array.isArray(body.bans)) return reply.code(400).send({ error: "bad_request" });
+  const bans = bansFromPayload(body.bans).slice(0, 500);
+  await rememberBans(bans);
+  return { ok: true, bans: bans.length };
 });
 
 app.get("/api/bot/board", async (request, reply) => {
@@ -1973,4 +2007,7 @@ app.log.info(`API ${config.port}, сезон ${config.season}`);
 const pullCombat = () => ingestCombat().catch((error) => app.log.error(error));
 pullCombat();
 setInterval(pullCombat, 20_000).unref();
+const pullBans = () => syncBans().catch((error) => app.log.error(error));
+pullBans();
+setInterval(pullBans, 60_000).unref();
 refreshPublicCareers().catch((error) => app.log.error(error));

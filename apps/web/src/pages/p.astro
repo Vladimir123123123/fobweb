@@ -147,6 +147,8 @@ import Base from "../layouts/Base.astro";
       const resultLabel = (result: string | undefined) => result === "win" ? "Выиграно" : result === "loss" ? "Потеряно" : result === "leave" ? "Досрочный выход" : "—";
       const resultClass = (result: string | undefined) => result === "win" ? "win" : result === "loss" ? "loss" : "";
       const matches = combat?.history ?? [];
+      const punishments = (profile.punishments ?? []) as Array<{ kind?: string; reason?: string; startedAt?: string | null; untilAt?: string | null; active?: boolean; liftedAt?: string | null }>;
+      const term = (item: { untilAt?: string | null; active?: boolean; liftedAt?: string | null }) => item.untilAt ? `до ${stamp(item.untilAt)}` : item.active ? "до снятия" : item.liftedAt ? `снято ${stamp(item.liftedAt)}` : "—";
       const factionTone = (name: string) => {
         const key = name.toLowerCase();
         if (key.includes("valk")) return "valk";
@@ -277,6 +279,23 @@ import Base from "../layouts/Base.astro";
               </table>
             </div>
           </section>` : ""}` : ""}
+          ${punishments.length ? `<section class="punishments">
+            <header>
+              <p class="eyebrow">Наказания</p>
+              <p>Этот сервер</p>
+            </header>
+            <table>
+              <thead><tr><th>Что</th><th>За что</th><th>Когда</th><th>Срок</th></tr></thead>
+              <tbody>
+                ${punishments.map((item) => `<tr>
+                  <td>${item.kind === "ban" ? "Бан" : "Наказание"}</td>
+                  <td>${esc(item.reason || "не указана")}</td>
+                  <td>${esc(stamp(item.startedAt) || "—")}</td>
+                  <td>${esc(term(item))}</td>
+                </tr>`).join("")}
+              </tbody>
+            </table>
+          </section>` : ""}
           <section class="dossier-split">
             <div class="panel">
               <p class="eyebrow">Классы</p>

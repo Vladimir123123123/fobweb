@@ -1092,6 +1092,11 @@ tbody tr:hover { background: rgba(47, 107, 255, 0.08); }
 .match-log td.valk { color: #ff5a4a; }
 .match-log td.mant { color: #3dba7a; }
 .match-log td.lone { color: #6ea2ff; }
+.punishments { margin-top: 14px; border: 1px solid var(--line); background: #10131a; }
+.punishments header { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px 0; color: var(--muted); font-size: 13px; }
+.punishments table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.punishments th, .punishments td { padding: 10px 12px; text-align: left; border-top: 1px solid var(--line); }
+.punishments th { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
 .dossier-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .dossier-split h2 { margin-top: 0; }
 .dossier-split h2 em { font-size: inherit; letter-spacing: inherit; }

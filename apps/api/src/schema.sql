@@ -117,6 +117,17 @@ CREATE TABLE IF NOT EXISTS server_matches (
 
 CREATE INDEX IF NOT EXISTS server_matches_player ON server_matches (steam_id, ended_at);
 
+CREATE TABLE IF NOT EXISTS server_punishments (
+  steam_id varchar(20) NOT NULL,
+  kind varchar(16) NOT NULL,
+  started_at datetime(3) NOT NULL,
+  reason varchar(240) NOT NULL DEFAULT '',
+  until_at datetime(3) NULL,
+  active tinyint(1) NOT NULL DEFAULT 1,
+  lifted_at datetime(3) NULL,
+  PRIMARY KEY (steam_id, kind, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS sync_sessions (
   steam_id varchar(20) PRIMARY KEY,
   status varchar(20) NOT NULL,
