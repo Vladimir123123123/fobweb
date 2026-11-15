@@ -138,7 +138,7 @@ import Base from "../layouts/Base.astro";
       const combat = profile.combat as {
         kills?: number | null; deaths?: number | null; kd?: number | string | null; place?: number | null; of?: number | null;
         headshots?: number | null; headshotPct?: number | null; longest?: number | null; average?: number | null;
-        bestMatch?: number | null; matches?: number | null; perMatch?: number | null; faction?: string | null;
+        bestMatch?: number | null; matches?: number | null; perMatch?: number | null; faction?: string | null; side?: string | null;
         teamkills?: number | null; enemy?: { name?: string; count?: number } | null; target?: { name?: string; count?: number } | null;
         weapons?: Array<{ name?: string; kills?: number; headshots?: number }>; winrate?: number | null;
         history?: Array<{ endedAt?: string | null; server?: string; map?: string; minutes?: number | null; faction?: string; result?: string; place?: number | null; field?: number | null; kills?: number; deaths?: number; kd?: number | null; headshots?: number; teamkills?: number; weapon?: string }>;
@@ -149,6 +149,12 @@ import Base from "../layouts/Base.astro";
       const matches = combat?.history ?? [];
       const punishments = (profile.punishments ?? []) as Array<{ kind?: string; reason?: string; startedAt?: string | null; untilAt?: string | null; active?: boolean; liftedAt?: string | null }>;
       const term = (item: { untilAt?: string | null; active?: boolean; liftedAt?: string | null }) => item.untilAt ? `до ${stamp(item.untilAt)}` : item.active ? "до снятия" : item.liftedAt ? `снято ${stamp(item.liftedAt)}` : "—";
+      const portraits: Record<string, string> = {
+        lone: "/brand/operators/lone.webp",
+        valk: "/brand/operators/valk.webp",
+        mant: "/brand/operators/mant.webp",
+      };
+      const portrait = portraits[String(combat?.side || "")] ?? "";
       const factionTone = (name: string) => {
         const key = name.toLowerCase();
         if (key.includes("valk")) return "valk";
@@ -180,7 +186,7 @@ import Base from "../layouts/Base.astro";
                 : "";
       root.innerHTML = `
         <article class="dossier"${accent ? ` data-accent="${accent}"` : ""}>
-          <header class="dossier-hero">
+          <header class="dossier-hero${portrait ? " has-op" : ""}">
             <div class="dossier-id">
               <div class="dossier-face">
                 <img class="dossier-avatar" alt="" src="${esc(user.avatar ?? "")}" />
@@ -204,6 +210,7 @@ import Base from "../layouts/Base.astro";
                 <span>уровень ${shift(latest?.wardog_level as number | null, previous?.wardog_level as number | null)}</span>
               </div>
             </div>
+            ${portrait ? `<img class="dossier-op" alt="" src="${portrait}" />` : ""}
           </header>
           ${syncNote ? `<p class="note dossier-alert" id="sync-note">${esc(syncNote)}</p>` : `<p class="note" id="sync-note"></p>`}
           <section class="dossier-meters">

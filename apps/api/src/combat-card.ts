@@ -14,6 +14,7 @@ export type CombatCard = {
   matches: number | null;
   perMatch: number | null;
   faction: string | null;
+  side: "lone" | "valk" | "mant" | null;
   teamkills: number | null;
   enemy: { name: string; count: number } | null;
   target: { name: string; count: number } | null;
@@ -50,6 +51,14 @@ function iso(value: unknown) {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function sideKey(name: string) {
+  const key = name.toLowerCase();
+  if (key.includes("lone") || key.includes("star")) return "lone" as const;
+  if (key.includes("valk")) return "valk" as const;
+  if (key.includes("mant")) return "mant" as const;
+  return null;
 }
 
 function person(name: unknown, count: unknown) {
@@ -154,6 +163,14 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
       weapon: String(item.weapon || ""),
     };
   });
+  const favoriteRows = await sql<Array<{ faction: string }>>`
+    SELECT faction
+    FROM played_matches
+    WHERE steam_id = ${steamId} AND faction <> ''
+    GROUP BY faction
+    ORDER BY COUNT(*) DESC, MAX(ended_at) DESC
+    LIMIT 1
+  `;
   const decided = num(rateRows[0]?.decided);
   const winrate = decided > 0 ? Math.round((num(rateRows[0]?.wins) / decided) * 1000) / 10 : null;
   const feedKills = num(shots[0]?.kills);
@@ -166,6 +183,9 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const kills = num(row.kills);
   const deaths = num(row.deaths);
   const headshots = hasFeed ? num(shots[0]?.headshots) : null;
+  const playedSide = String(favoriteRows[0]?.faction || "").trim();
+  const seenSide = String(row.faction || "").trim();
+  const faction = sideKey(playedSide) ? playedSide : seenSide;
   return {
     kills,
     deaths,
@@ -179,7 +199,8 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     bestMatch: best > 0 ? best : null,
     matches,
     perMatch: matches ? Math.round((kills / matches) * 10) / 10 : null,
-    faction: String(row.faction || "").trim() || null,
+    faction: faction || null,
+    side: sideKey(faction),
     teamkills: hasFeed ? num(teamRows[0]?.n) : null,
     enemy: person(foes[0]?.name, foes[0]?.n),
     target: person(marks[0]?.name, marks[0]?.n),
