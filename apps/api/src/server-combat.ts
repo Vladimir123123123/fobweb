@@ -222,8 +222,8 @@ export async function ingestCombat(): Promise<number> {
       if (profile.avatar) avatar = profile.avatar;
     }
     await sql`
-      INSERT INTO server_combat (steam_id, persona, avatar, kills, deaths, match_kills, match_deaths, faction, seen_at)
-      VALUES (${player.steamId}, ${persona}, ${avatar}, ${kills.lifetime}, ${deaths.lifetime}, ${kills.match}, ${deaths.match}, ${player.faction || null}, now())
+      INSERT INTO server_combat (steam_id, persona, avatar, kills, deaths, match_kills, match_deaths, faction, seen_at, first_seen)
+      VALUES (${player.steamId}, ${persona}, ${avatar}, ${kills.lifetime}, ${deaths.lifetime}, ${kills.match}, ${deaths.match}, ${player.faction || null}, now(), now())
       ON DUPLICATE KEY UPDATE
         persona = COALESCE(VALUES(persona), persona),
         avatar = COALESCE(VALUES(avatar), avatar),
@@ -232,7 +232,8 @@ export async function ingestCombat(): Promise<number> {
         match_kills = VALUES(match_kills),
         match_deaths = VALUES(match_deaths),
         faction = VALUES(faction),
-        seen_at = now()
+        seen_at = now(),
+        first_seen = COALESCE(first_seen, VALUES(first_seen))
     `;
   }
   return players.length;

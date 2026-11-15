@@ -21,6 +21,11 @@ import Base from "../layouts/Base.astro";
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
   }
+  function stamp(value: unknown) {
+    const date = new Date(String(value ?? ""));
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+  }
   function when(value: unknown) {
     const date = new Date(String(value ?? ""));
     if (Number.isNaN(date.getTime())) return "";
@@ -130,7 +135,27 @@ import Base from "../layouts/Base.astro";
       const accent = accents.find((name) => name === user.accent) ?? "";
       const marks: Record<string, string> = { orange: "#ff4d1c", gold: "#e4b04a", blue: "#6ea2ff", red: "#ff5a4a", green: "#3dba7a" };
       const motto = String(user.motto ?? "").trim();
-      const combat = profile.combat as { kills?: number | null; deaths?: number | null; kd?: number | string | null; faction?: string | null } | null;
+      const combat = profile.combat as {
+        kills?: number | null; deaths?: number | null; kd?: number | string | null; place?: number | null; of?: number | null;
+        headshots?: number | null; headshotPct?: number | null; longest?: number | null; average?: number | null;
+        bestMatch?: number | null; matches?: number | null; perMatch?: number | null; faction?: string | null;
+        teamkills?: number | null; enemy?: { name?: string; count?: number } | null; target?: { name?: string; count?: number } | null;
+        weapons?: Array<{ name?: string; kills?: number; headshots?: number }>; since?: string | null; last?: string | null;
+      } | null;
+      const factionTone = (name: string) => {
+        const key = name.toLowerCase();
+        if (key.includes("valk")) return "valk";
+        if (key.includes("mant")) return "mant";
+        if (key.includes("lone")) return "lone";
+        return "";
+      };
+      const meter = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${num(value)}${suffix}`;
+      const rival = (row: { name?: string; count?: number } | null | undefined) => row?.name ? `${esc(row.name)} · ${num(row.count)}×` : "—";
+      const weapons = combat?.weapons ?? [];
+      const topGun = Math.max(...weapons.map((gun) => Number(gun.kills) || 0), 1);
+      const played = combat?.since || combat?.last
+        ? `Играет здесь с ${esc(stamp(combat?.since) || "—")} · последний раз ${esc(stamp(combat?.last) || "—")}`
+        : "";
       const syncNote = sync === "same"
         ? "Цифры те же, что уже были. Свежее игра отдаст, если закрыть WARDOGS и снять ещё раз."
         : sync === "game_running"
@@ -182,12 +207,41 @@ import Base from "../layouts/Base.astro";
             <div><span>Стоимость</span><b>${money(latest?.account_value as number | null)}</b></div>
             <div><span>Снимков</span><b>${history.length}</b></div>
           </section>
-          <section class="dossier-meters server">
-            <div><span>Убийства</span><b>${num(combat?.kills)}</b></div>
-            <div><span>Смерти</span><b>${num(combat?.deaths)}</b></div>
-            <div><span>К/Д</span><b>${kdText(combat?.kd)}</b></div>
-            <div><span>Фракция</span><b>${esc(String(combat?.faction ?? "").trim()) || "—"}</b></div>
-          </section>
+          ${combat ? `<section class="fight-card">
+            <header>
+              <p class="eyebrow">Статистика игрока</p>
+              <p>Этот сервер, за всё время</p>
+            </header>
+            <div class="fight-card-hero">
+              <div>
+                <b>${kdText(combat.kd)}</b>
+                <span>К/Д</span>
+              </div>
+              <div>
+                <strong>${num(combat.kills)} убийств · ${num(combat.deaths)} смертей</strong>
+                <span>Место #${num(combat.place)} из ${num(combat.of)}</span>
+              </div>
+            </div>
+            <div class="fight-card-grid">
+              <div><span>Хедшоты</span><b>${combat.headshotPct == null ? "—" : `${Number(combat.headshotPct).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`} <small>${combat.headshots == null ? "" : num(combat.headshots)}</small></b></div>
+              <div><span>Самое дальнее убийство</span><b>${meter(combat.longest, " м")}</b></div>
+              <div><span>Ср. дистанция</span><b>${meter(combat.average, " м")}</b></div>
+              <div><span>Лучший матч</span><b>${combat.bestMatch == null ? "—" : `${num(combat.bestMatch)} убийств`}</b></div>
+              <div><span>Матчи</span><b>${combat.matches == null ? "—" : `${num(combat.matches)} <small>по ${combat.perMatch ?? "—"} убийств каждый</small>`}</b></div>
+              <div><span>Основная сторона</span><b class="${factionTone(String(combat.faction || ""))}">${esc(String(combat.faction || "").trim()) || "—"}</b></div>
+              <div><span>Убийства своих</span><b>${meter(combat.teamkills)}</b></div>
+            </div>
+            <div class="fight-card-rivals">
+              <p class="eyebrow">Соперники</p>
+              <p><span>Заклятый враг</span><b>${rival(combat.enemy)}</b></p>
+              <p><span>Любимая цель</span><b>${rival(combat.target)}</b></p>
+            </div>
+            ${weapons.length ? `<div class="fight-card-guns">
+              <p class="eyebrow">Оружие</p>
+              ${weapons.map((gun) => `<p><i style="width:${Math.round(((Number(gun.kills) || 0) / topGun) * 100)}%"></i><b>${esc(gun.name || "неизвестно")}</b><span>${num(gun.kills)} · ${num(gun.headshots)} HS</span></p>`).join("")}
+            </div>` : `<p class="note">Оружие, хедшоты и дистанция появятся со следующими убийствами, которые пришлёт сервер.</p>`}
+            ${played ? `<p class="note">${played}</p>` : ""}
+          </section>` : ""}
           <section class="dossier-split">
             <div class="panel">
               <p class="eyebrow">Классы</p>

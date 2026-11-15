@@ -97,6 +97,18 @@ export async function migrate() {
   await ensureColumn("users", "accent", "varchar(16) NULL");
   await ensureColumn("server_combat", "persona", "varchar(80) NULL");
   await ensureColumn("server_combat", "avatar", "varchar(300) NULL");
+  await ensureColumn("server_combat", "first_seen", "datetime(3) NULL");
+  await sql`UPDATE server_combat SET first_seen = seen_at WHERE first_seen IS NULL`;
+  await sql`
+    UPDATE server_combat c
+    JOIN (
+      SELECT steam_id, MIN(ended_at) AS first_at
+      FROM server_matches
+      GROUP BY steam_id
+    ) m ON m.steam_id = c.steam_id
+    SET c.first_seen = m.first_at
+    WHERE c.first_seen IS NULL OR m.first_at < c.first_seen
+  `;
   // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
   await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
   await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;

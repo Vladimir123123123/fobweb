@@ -45,8 +45,27 @@ CREATE TABLE IF NOT EXISTS server_combat (
   match_kills int NOT NULL DEFAULT 0,
   match_deaths int NOT NULL DEFAULT 0,
   faction varchar(40),
-  seen_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+  seen_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  first_seen datetime(3) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS server_kills (
+  event_id varchar(64) PRIMARY KEY,
+  match_id varchar(80) NOT NULL DEFAULT '',
+  killed_at datetime(3) NULL,
+  killer_steam varchar(20) NOT NULL DEFAULT '',
+  killer_name varchar(80) NOT NULL DEFAULT '',
+  victim_steam varchar(20) NOT NULL DEFAULT '',
+  victim_name varchar(80) NOT NULL DEFAULT '',
+  weapon varchar(80) NOT NULL DEFAULT '',
+  meters int NULL,
+  headshot tinyint(1) NOT NULL DEFAULT 0,
+  suicide tinyint(1) NOT NULL DEFAULT 0,
+  teamkill tinyint(1) NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS server_kills_killer ON server_kills (killer_steam);
+CREATE INDEX IF NOT EXISTS server_kills_victim ON server_kills (victim_steam);
 
 CREATE TABLE IF NOT EXISTS server_matches (
   id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,

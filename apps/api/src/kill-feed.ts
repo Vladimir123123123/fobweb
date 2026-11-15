@@ -6,6 +6,7 @@ import { sql } from "./db.js";
 
 const HEADSHOT = "Headshot";
 const SUICIDE = "Suicide";
+const TEAMKILL = "TeamKill";
 
 export type LiveKill = {
   killer: string;
@@ -49,7 +50,18 @@ function metersOf(distance: unknown) {
 }
 
 function tagged(tags: unknown, needle: string) {
-  return Array.isArray(tags) && tags.some((tag) => String(tag).includes(needle));
+  const want = needle.toLowerCase();
+  return Array.isArray(tags) && tags.some((tag) => String(tag).toLowerCase().includes(want));
+}
+
+function steam(value: unknown) {
+  const id = String(value || "").trim();
+  return /^\d{17}$/.test(id) ? id : "";
+}
+
+function when(value: unknown) {
+  const date = new Date(String(value || ""));
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function feedToken() {
@@ -75,35 +87,79 @@ export async function feedAuthorized(header: string) {
   return timingSafeEqual(left, right);
 }
 
+type StoredKill = {
+  eventId: string;
+  matchId: string;
+  killedAt: Date | null;
+  killerSteam: string;
+  killerName: string;
+  victimSteam: string;
+  victimName: string;
+  weapon: string;
+  meters: number | null;
+  headshot: boolean;
+  suicide: boolean;
+  teamkill: boolean;
+};
+
 /** Партия событий, которую игра сама шлёт на адрес киллфида. */
-export function acceptFeed(body: unknown) {
+export async function acceptFeed(body: unknown) {
   const events = body && typeof body === "object" && Array.isArray((body as { events?: unknown }).events)
     ? (body as { events: unknown[] }).events
     : [];
-  let added = 0;
+  const rows: StoredKill[] = [];
   for (const item of events) {
     if (!item || typeof item !== "object") continue;
     const event = item as Record<string, unknown>;
     if (event.type !== "killed") continue;
-    const id = String(event.eventId || "");
-    if (id && seen.has(id)) continue;
     const victim = String(event.victimName || "").trim().slice(0, 80);
     if (!victim) continue;
     const killer = String(event.killerName || "").trim().slice(0, 80);
-    const suicide = tagged(event.contextTags, SUICIDE) || (killer !== "" && killer === victim);
-    recent.unshift({
-      killer: suicide ? "" : killer,
-      victim,
+    const killerSteam = steam(event.killerSteamId);
+    const victimSteam = steam(event.victimSteamId);
+    const suicide = tagged(event.contextTags, SUICIDE) || (killer !== "" && killer === victim) || (killerSteam !== "" && killerSteam === victimSteam);
+    const killedAt = when(event.eventTime);
+    const given = String(event.eventId || "").trim();
+    const eventId = (given || createHash("sha256").update([killerSteam, victimSteam, killedAt?.toISOString() ?? "", String(event.cause || ""), String(event.distance || "")].join("|")).digest("hex")).slice(0, 64);
+    if (seen.has(eventId)) continue;
+    rows.push({
+      eventId,
+      matchId: String(event.matchId || "").trim().slice(0, 80),
+      killedAt,
+      killerSteam,
+      killerName: killer,
+      victimSteam,
+      victimName: victim,
       weapon: weaponLabel(String(event.cause || "")),
       meters: metersOf(event.distance),
       headshot: tagged(event.contextTags, HEADSHOT),
+      suicide,
+      teamkill: tagged(event.contextTags, TEAMKILL),
     });
-    if (id) seen.add(id);
-    added += 1;
+  }
+  for (const row of rows) {
+    await sql`
+      INSERT IGNORE INTO server_kills (
+        event_id, match_id, killed_at, killer_steam, killer_name, victim_steam, victim_name,
+        weapon, meters, headshot, suicide, teamkill
+      ) VALUES (
+        ${row.eventId}, ${row.matchId}, ${row.killedAt}, ${row.killerSteam}, ${row.killerName},
+        ${row.victimSteam}, ${row.victimName}, ${row.weapon}, ${row.meters},
+        ${row.headshot ? 1 : 0}, ${row.suicide ? 1 : 0}, ${row.teamkill ? 1 : 0}
+      )
+    `;
+    seen.add(row.eventId);
+    recent.unshift({
+      killer: row.suicide ? "" : row.killerName,
+      victim: row.victimName,
+      weapon: row.weapon,
+      meters: row.meters,
+      headshot: row.headshot,
+    });
   }
   while (recent.length > 40) recent.pop();
   while (seen.size > 400) seen.clear();
-  return added;
+  return rows.length;
 }
 
 export function recentKills() {

@@ -7,6 +7,7 @@ import { discordInvite, imageFile, readMedia, removeMedia, saveMedia } from "./m
 import { clearSession, cookieString, createSession, readSession, writeCookies } from "./session.js";
 import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
+import { combatCard } from "./combat-card.js";
 import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
@@ -516,6 +517,7 @@ async function botPlayerPayload(steamId: string) {
     user: users[0],
     snapshot,
     primaryClass: primaryClassOf(snapshot),
+    combat: await combatCard(steamId),
   };
 }
 
@@ -578,7 +580,7 @@ app.get("/api/guides", async () => {
 app.post("/api/ingest/events", async (request, reply) => {
   const header = String(request.headers.authorization ?? "");
   if (!(await feedAuthorized(header))) return reply.code(401).send({ error: "unauthorized" });
-  acceptFeed(request.body);
+  await acceptFeed(request.body);
   return reply.code(204).send();
 });
 
@@ -1004,12 +1006,11 @@ app.get("/api/players/:steamId", async (request, reply) => {
       FROM server_combat WHERE steam_id = ${steamId}
     `;
     if (!seen.length) return notFound(reply);
-    const combat = seen[0];
     return {
       user: {
         steam_id: steamId,
-        persona: combat.persona,
-        avatar: combat.avatar,
+        persona: seen[0].persona,
+        avatar: seen[0].avatar,
         country: null,
         cis_opt_in: 1,
         hide_leaderboard: 0,
@@ -1018,7 +1019,7 @@ app.get("/api/players/:steamId", async (request, reply) => {
         accent: null,
       },
       history: [],
-      combat,
+      combat: await combatCard(steamId),
       squad: null,
       sync: null,
     };
@@ -1038,19 +1039,13 @@ app.get("/api/players/:steamId", async (request, reply) => {
     WHERE m.steam_id = ${steamId} AND m.status = 'member' AND sq.status = 'approved'
     LIMIT 1
   `;
-  const combatRows = await sql<Array<{ kills: number; deaths: number; kd: number | string | null; faction: string | null }>>`
-    SELECT kills, deaths, faction,
-           CASE WHEN deaths = 0 THEN kills ELSE ROUND(kills / deaths, 2) END AS kd
-    FROM server_combat
-    WHERE steam_id = ${steamId}
-  `;
   const sync = await sql`SELECT status, expires_at, updated_at FROM sync_sessions WHERE steam_id = ${steamId}`;
   const picture = (file: string | null) => file && /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(file) ? `/api/media/${file}` : "";
   const squad = squads[0];
   return {
     user: users[0],
     history,
-    combat: combatRows[0] ?? null,
+    combat: await combatCard(steamId),
     squad: squad ? {
       id: squad.id,
       name: squad.name,
