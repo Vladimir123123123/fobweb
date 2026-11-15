@@ -798,6 +798,8 @@ label.check input { width: auto; }
 .mate-fallback { display: grid; place-items: center; font-family: Unbounded, "Golos Text", sans-serif; }
 .mate strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mate small { color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; }
+.mate.wait { border-style: dashed; }
+.mate-actions { display: flex; flex-direction: column; gap: 6px; }
 .mate.lead { border-color: #1e6b34; }
 .mate.lead small { color: var(--green); }
 .mate-report {

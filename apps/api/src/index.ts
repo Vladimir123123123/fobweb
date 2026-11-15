@@ -1397,10 +1397,11 @@ app.post("/api/squads/:id/join", async (request, reply) => {
       const taken = seat.find((row) => row.status === "member");
       if (taken && Number(taken.squad_id) !== id) throw new Error("already");
       if (taken) return;
+      if (seat.some((row) => row.status === "pending" && Number(row.squad_id) === id)) return;
       await tx`DELETE FROM squad_members WHERE steam_id = ${steamId}`;
       await tx`
         INSERT INTO squad_members (squad_id, steam_id, role, status)
-        VALUES (${id}, ${steamId}, 'member', 'member')
+        VALUES (${id}, ${steamId}, 'member', 'pending')
       `;
     });
   } catch (error) {
@@ -1454,9 +1455,17 @@ app.post("/api/squads/:id/decide", async (request, reply) => {
   if (body.accept === true) {
     const member = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${target} AND status = 'member'`;
     if (member.length) return reply.code(400).send({ error: "already" });
-    await sql`UPDATE squad_members SET status = 'member' WHERE squad_id = ${id} AND steam_id = ${target}`;
+    const updated = await sql`
+      UPDATE squad_members SET status = 'member'
+      WHERE squad_id = ${id} AND steam_id = ${target} AND status = 'pending' AND role <> 'leader'
+    `;
+    if (!updated.length) return reply.code(400).send({ error: "gone" });
   } else {
-    await sql`DELETE FROM squad_members WHERE squad_id = ${id} AND steam_id = ${target} AND status = 'pending'`;
+    const removed = await sql`
+      DELETE FROM squad_members
+      WHERE squad_id = ${id} AND steam_id = ${target} AND status = 'pending' AND role <> 'leader'
+    `;
+    if (!removed.length) return reply.code(400).send({ error: "gone" });
   }
   return { ok: true };
 });
@@ -1510,7 +1519,7 @@ app.get("/api/squads/:id", async (request, reply) => {
   `;
   const seatRows = viewer
     ? await sql<{ squad_id: number; status: string }[]>`
-      SELECT squad_id, status FROM squad_members WHERE steam_id = ${viewer} AND status = 'member' LIMIT 1
+      SELECT squad_id, status FROM squad_members WHERE steam_id = ${viewer} LIMIT 1
     `
     : [];
   return {

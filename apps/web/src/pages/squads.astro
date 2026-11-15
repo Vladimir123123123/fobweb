@@ -6,7 +6,7 @@ import Base from "../layouts/Base.astro";
     <div>
       <p class="eyebrow">Отряд со Steam</p>
       <h1>Сквады</h1>
-      <p class="lead">Логотип, описание, критерии набора, Discord и состав. Вступить может любой, кто вошёл через Steam. Один игрок состоит в одном скваде.</p>
+      <p class="lead">Логотип, описание, критерии набора, Discord и состав. Заявку подаёт тот, кто вошёл через Steam. В состав попадает после решения лидера.</p>
     </div>
   </div>
   <form class="squad-create panel" id="create">
@@ -113,7 +113,7 @@ import Base from "../layouts/Base.astro";
         </a>
         <div class="squad-actions">
           ${squad.discord_url ? `<a class="btn ghost small" href="${esc(squad.discord_url)}">Discord</a>` : ""}
-          ${leader ? `<button class="btn small" data-edit type="button">Редактировать</button>` : mine.get(squad.id)?.status === "member" ? `<span class="note">Вы в составе</span>` : seated || squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">Вступить</button>`}
+          ${leader ? `<button class="btn small" data-edit type="button">Редактировать</button>` : mine.get(squad.id)?.status === "member" ? `<span class="note">Вы в составе</span>` : mine.get(squad.id)?.status === "pending" ? `<span class="note">Заявка отправлена</span>` : seated || squad.closed ? "" : `<button class="btn small" data-join="${squad.id}" type="button">Подать заявку</button>`}
         </div>
         ${leader ? `
           <form id="profile-form" class="squad-form squad-edit" hidden>
@@ -192,7 +192,7 @@ import Base from "../layouts/Base.astro";
         const body = await response.json().catch(() => ({}));
         if (response.status === 401) location.href = "/auth/steam?next=/squads";
         note.textContent = response.ok
-          ? "Вы в составе сквада."
+          ? "Заявка отправлена. Лидер сквада её примет или отклонит."
           : body.error === "closed"
             ? "Набор закрыт."
             : body.error === "already"

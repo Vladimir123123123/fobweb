@@ -21,20 +21,35 @@ import Base from "../layouts/Base.astro";
       const data = await response.json();
       const squad = data.squad;
       const members = data.members as Array<{ steam_id: string; role: string; status: string; persona: string | null; avatar: string | null }>;
-      const here = data.seat && String(data.seat.squad_id) === id;
-      const elsewhere = Boolean(data.seat) && !here;
+      const seat = data.seat as { squad_id: number; status: string } | null;
+      const onThis = Boolean(seat) && String(seat?.squad_id) === id;
+      const memberHere = onThis && seat?.status === "member";
+      const pendingHere = onThis && seat?.status === "pending";
+      const memberElsewhere = seat?.status === "member" && !onThis;
+      const leader = Boolean(data.mine);
       const mine = me.user?.steam_id ? String(me.user.steam_id) : "";
-      const roleName = (member: { role: string; status: string }) => member.role === "leader" ? "лидер" : member.status === "pending" ? "заявка" : "в составе";
-      const roster = members.map((member) => `
+      const rosterRows = members.filter((member) => member.status === "member");
+      const applications = leader ? members.filter((member) => member.status === "pending") : [];
+      const person = (member: { steam_id: string; persona: string | null; avatar: string | null }, label: string) => `
+        <a href="/p?id=${member.steam_id}">
+          ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="mate-fallback">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
+          <span>
+            <strong>${esc(member.persona ?? member.steam_id)}</strong>
+            <small>${label}</small>
+          </span>
+        </a>`;
+      const roster = rosterRows.map((member) => `
         <article class="mate${member.role === "leader" ? " lead" : ""}">
-          <a href="/p?id=${member.steam_id}">
-            ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="mate-fallback">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
-            <span>
-              <strong>${esc(member.persona ?? member.steam_id)}</strong>
-              <small>${roleName(member)}</small>
-            </span>
-          </a>
+          ${person(member, member.role === "leader" ? "лидер" : "в составе")}
           ${member.steam_id === mine ? "" : `<button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>`}
+        </article>`).join("");
+      const queue = applications.map((member) => `
+        <article class="mate wait">
+          ${person(member, "заявка")}
+          <span class="mate-actions">
+            <button class="btn small" type="button" data-decide="${member.steam_id}" data-accept="1">Принять</button>
+            <button class="btn ghost small" type="button" data-decide="${member.steam_id}" data-accept="0">Отклонить</button>
+          </span>
         </article>`).join("");
       const state = squad.status === "approved" ? "Одобрено" : squad.status === "rejected" ? "Отклонён" : "На модерации";
       const stateClass = squad.status === "approved" ? "approved" : squad.status === "rejected" ? "rejected" : "pending";
@@ -68,12 +83,13 @@ import Base from "../layouts/Base.astro";
           </section>
           <div class="hall-actions">
             ${squad.discord_url ? `<a class="btn small" href="${esc(squad.discord_url)}">Discord сквада</a>` : ""}
-            ${here ? `<span class="note">Вы в составе.</span>` : elsewhere ? `<span class="note">Вы уже состоите в скваде.</span>` : squad.closed ? `<span class="note">Набор закрыт.</span>` : `<button class="btn small" id="join" type="button">Вступить</button>`}
+            ${memberHere ? `<span class="note">Вы в составе.</span>` : pendingHere ? `<span class="note">Заявка на рассмотрении.</span>` : memberElsewhere ? `<span class="note">Вы уже состоите в скваде.</span>` : squad.closed ? `<span class="note">Набор закрыт.</span>` : `<button class="btn small" id="join" type="button">Подать заявку</button>`}
           </div>
         </article>
+        ${queue ? `<div class="hall-head"><h2>Заявки</h2><p class="note">${applications.length}</p></div><div class="hall-roster">${queue}</div>` : ""}
         <div class="hall-head">
           <h2>Состав</h2>
-          <p class="note">${(() => { const n = members.length; const mod10 = n % 10; const mod100 = n % 100; const word = mod10 === 1 && mod100 !== 11 ? "человек" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "человека" : "человек"; return `${n} ${word}`; })()}</p>
+          <p class="note">${(() => { const n = rosterRows.length; const mod10 = n % 10; const mod100 = n % 100; const word = mod10 === 1 && mod100 !== 11 ? "человек" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "человека" : "человек"; return `${n} ${word}`; })()}</p>
         </div>
         <div class="hall-roster">${roster || "<p>В составе пока никого.</p>"}</div>
         <form id="report-form" class="report" hidden>
@@ -89,13 +105,31 @@ import Base from "../layouts/Base.astro";
         const body = await join.json().catch(() => ({}));
         if (join.status === 401) location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
         note.textContent = join.ok
-          ? "Вы в составе сквада."
+          ? "Заявка отправлена. Лидер сквада её примет или отклонит."
           : body.error === "closed"
             ? "Набор закрыт."
             : body.error === "already"
               ? "Вы уже состоите в скваде."
               : "Сейчас вступить не получилось.";
         if (join.ok) location.reload();
+      });
+      document.querySelectorAll<HTMLButtonElement>("[data-decide]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const note = document.querySelector("#squad-note")!;
+          const sent = await fetch(`/api/squads/${id}/decide`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ steamId: button.dataset.decide, accept: button.dataset.accept === "1" }),
+          });
+          if (sent.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+            return;
+          }
+          note.textContent = sent.ok
+            ? button.dataset.accept === "1" ? "Игрок принят в состав." : "Заявка отклонена."
+            : "Эта заявка уже решена.";
+          if (sent.ok) location.reload();
+        });
       });
       const reportForm = document.querySelector<HTMLFormElement>("#report-form");
       let reportTarget = "";
