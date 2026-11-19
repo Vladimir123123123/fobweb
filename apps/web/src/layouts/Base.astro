@@ -8,11 +8,11 @@ interface Props {
   fit?: boolean;
   wide?: boolean;
 }
-const { title, description = "Сервер FOB сообщества WARDOGS в СНГ: 50 на 50, сборки, оружие, техника, рейтинг и сквады.", robots, fit = false, wide = false } = Astro.props;
+const { title, description = "Сервер FOB сообщества WARDOGS в СНГ: 50 на 50, рейтинг и сквады.", robots, fit = false, wide = false } = Astro.props;
 const metrika = import.meta.env.PUBLIC_METRIKA_ID ?? "";
 const path = Astro.url.pathname;
 const canonical = `https://fob-wd.ru${path === "/" ? "/" : path}`;
-const keywords = "WARDOGS сервер СНГ, FOB WARDOGS, сервер WARDOGS 50 на 50, WARDOGS без снайперов, рейтинг игроков WARDOGS, сборки WARDOGS, оружие WARDOGS, техника WARDOGS, сквад WARDOGS";
+const keywords = "WARDOGS сервер СНГ, FOB WARDOGS, сервер WARDOGS 50 на 50, WARDOGS без снайперов, рейтинг игроков WARDOGS, сквад WARDOGS";
 const jsonLd = JSON.stringify({
   "@context": "https://schema.org",
   "@type": "WebSite",
@@ -58,9 +58,6 @@ const jsonLd = JSON.stringify({
         <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" /><span>WARDOGS<small>FOB · СНГ</small></span></a>
         <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button>
         <nav class="nav" id="site-nav">
-          <a href="/builds" aria-current={path.startsWith("/builds") || path === "/b" ? "page" : undefined}>Сборки</a>
-          <a href="/weapons" aria-current={path.startsWith("/weapons") ? "page" : undefined}>Оружие</a>
-          <a href="/vehicles" aria-current={path.startsWith("/vehicles") ? "page" : undefined}>Техника</a>
           <a href="/ratings" aria-current={path.startsWith("/ratings") ? "page" : undefined}>Рейтинг</a>
           <a href="/guides" aria-current={path.startsWith("/guides") ? "page" : undefined}>Гайды</a>
           <a href="/squads" aria-current={path.startsWith("/squad") ? "page" : undefined}>Сквады</a>

@@ -28,7 +28,7 @@ const rows = [
 const kinds = Object.keys(KIND_LABEL).filter((kind) => rows.some((gun) => gun.archetype === kind));
 const money = (value: number | null) => value === null ? "нет цены" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
 ---
-<Base title="Оружие — WARDOGS СНГ" description="Оружие из файлов игры: тип, темп, дальность, вес и цена.">
+<Base title="Оружие — WARDOGS СНГ" description="Оружие из файлов игры: тип, темп, дальность, вес и цена." robots="noindex">
   <div class="page-head">
     <div>
       <h1>Оружие</h1>
