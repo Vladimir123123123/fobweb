@@ -1470,6 +1470,22 @@ app.post("/api/squads/:id/decide", async (request, reply) => {
   return { ok: true };
 });
 
+app.post("/api/squads/:id/remove", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  const body = asObject(request.body);
+  const target = text(body?.steamId, 20);
+  if (!steamId || !/^\d{17}$/.test(target) || target === steamId) return reply.code(400).send({ error: "bad_request" });
+  const squad = await sql`SELECT owner_steam_id FROM squads WHERE id = ${id}`;
+  if (!squad.length || squad[0].owner_steam_id !== steamId) return notFound(reply);
+  const removed = await sql`
+    DELETE FROM squad_members
+    WHERE squad_id = ${id} AND steam_id = ${target} AND status = 'member' AND role <> 'leader'
+  `;
+  if (!removed.length) return reply.code(400).send({ error: "gone" });
+  return { ok: true };
+});
+
 app.post("/api/squads/:id/profile", async (request, reply) => {
   const steamId = steamIdOf(request);
   const id = Number((request.params as { id: string }).id);

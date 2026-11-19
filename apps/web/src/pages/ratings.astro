@@ -188,7 +188,7 @@ import Base from "../layouts/Base.astro";
     note.textContent = "Обновляем статистику. Не закрывай вкладку.";
     const job = waitParams.get("job") || "";
     (async () => {
-      for (let i = 0; i < 45; i++) {
+      for (let i = 0; i < 75; i++) {
         const data = await fetch(`/api/auth/status?job=${encodeURIComponent(job)}`).then((r) => r.json()).catch(() => null);
         if (!data || data.status === "pending") {
           await new Promise((ok) => setTimeout(ok, 2000));

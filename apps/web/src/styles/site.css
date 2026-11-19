@@ -220,7 +220,7 @@ p { color: var(--muted); line-height: 1.55; }
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  max-width: 720px;
+  max-width: none;
   margin-top: 22px;
   padding: 16px 18px 14px;
   background:
@@ -266,19 +266,21 @@ p { color: var(--muted); line-height: 1.55; }
 .live-score i b { color: #fff; }
 .season-lock {
   display: block;
-  padding: 22px 0 48px;
+  padding: 16px 0 48px;
 }
 #fight {
-  max-width: 920px;
-  border: 1px solid rgba(239, 170, 24, 0.35);
-  background: #101410;
+  display: grid;
+  gap: 12px;
+  max-width: none;
+  border: 0;
+  background: transparent;
 }
 .crawl {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 36px;
-  border-bottom: 1px solid rgba(239, 170, 24, 0.35);
+  border: 1px solid rgba(239, 170, 24, 0.35);
   background: #0c0f0d;
 }
 .live-mark {
@@ -321,9 +323,9 @@ p { color: var(--muted); line-height: 1.55; }
 #fight-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 18px;
+  gap: 16px;
   margin-top: 0;
-  padding: 8px 12px 10px;
+  padding: 0;
 }
 #fight-teams[data-cols="1"] { grid-template-columns: minmax(0, 1fr); }
 #fight-teams[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -333,7 +335,14 @@ p { color: var(--muted); line-height: 1.55; }
 .hot { display: none; align-items: center; gap: 6px; margin: 0; color: #ff3b3b; font-weight: 700; letter-spacing: 0.04em; }
 .hot:not([hidden]) { display: inline-flex; }
 .hot b { font-size: 22px; line-height: 1; }
-.fight-team { margin-top: 0; max-height: 248px; overflow: auto; padding-left: 8px; }
+.fight-team {
+  margin-top: 0;
+  max-height: 248px;
+  overflow: auto;
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(239, 170, 24, 0.35);
+  background: #101410;
+}
 .fight-team.valk { box-shadow: inset 2px 0 0 #e23b3b; }
 .fight-team.mant { box-shadow: inset 2px 0 0 #22b84a; }
 .fight-team.lone { box-shadow: inset 2px 0 0 #6ea2ff; }

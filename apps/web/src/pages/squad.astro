@@ -41,7 +41,7 @@ import Base from "../layouts/Base.astro";
       const roster = rosterRows.map((member) => `
         <article class="mate${member.role === "leader" ? " lead" : ""}">
           ${person(member, member.role === "leader" ? "лидер" : "в составе")}
-          ${member.steam_id === mine ? "" : `<button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>`}
+          ${member.steam_id === mine ? "" : `<span class="mate-actions"><button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>${leader && member.role !== "leader" ? `<button class="btn ghost small" type="button" data-remove="${member.steam_id}">Исключить</button>` : ""}</span>`}
         </article>`).join("");
       const queue = applications.map((member) => `
         <article class="mate wait">
@@ -128,6 +128,23 @@ import Base from "../layouts/Base.astro";
           note.textContent = sent.ok
             ? button.dataset.accept === "1" ? "Игрок принят в состав." : "Заявка отклонена."
             : "Эта заявка уже решена.";
+          if (sent.ok) location.reload();
+        });
+      });
+      document.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const note = document.querySelector("#squad-note")!;
+          if (!window.confirm("Исключить этого игрока из сквада?")) return;
+          const sent = await fetch(`/api/squads/${id}/remove`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ steamId: button.dataset.remove }),
+          });
+          if (sent.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+            return;
+          }
+          note.textContent = sent.ok ? "Игрок исключён из состава." : "Этого игрока уже нет в составе.";
           if (sent.ok) location.reload();
         });
       });
