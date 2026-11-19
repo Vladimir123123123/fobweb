@@ -49,13 +49,13 @@ const jsonLd = JSON.stringify({
     <link rel="icon" href="/brand/logo.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/brand/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Unbounded:wght@500;700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=Oswald:wght@500;600;700&display=swap" />
     <script type="application/ld+json" is:inline set:html={jsonLd}></script>
   </head>
   <body class:list={{ fit, wide }} data-metrika={metrika}>
     <header class="topbar">
       <div class="wrap top">
-        <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" /><span>FOB<small>WARDOGS · СНГ</small></span></a>
+        <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" /><span>WARDOGS<small>FOB · СНГ</small></span></a>
         <button class="btn ghost small menu" type="button" aria-expanded="false" aria-controls="site-nav">Меню</button>
         <nav class="nav" id="site-nav">
           <a href="/builds" aria-current={path.startsWith("/builds") || path === "/b" ? "page" : undefined}>Сборки</a>

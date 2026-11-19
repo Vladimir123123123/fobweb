@@ -6,13 +6,14 @@ const season = import.meta.env.GAME_SEASON ?? "03";
   <section class="stage">
     <img class="stage-photo" src="/brand/banner.jpg" alt="" />
     <div class="stage-copy">
-      <p class="eyebrow">Сезон {season}</p>
-      <h1>Твоя база.<br /><span>Твои правила.</span></h1>
+      <p class="eyebrow">FOB · сезон {season} · 50 на 50</p>
+      <h1>WARDOGS</h1>
+      <p class="stage-kicker">Tactical all out warfare</p>
       <div class="row">
         <a class="btn" href="/vehicles">Техника</a>
         <a class="btn ghost" href="/squads">Найти своих</a>
       </div>
-      <p class="stage-line">Сервер FOB для WARDOGS: 50 на 50, RU/EU, без снайперов и DMR. Сборки, оружие, техника и рейтинг сезона.</p>
+      <p class="stage-line">Сервер FOB: RU/EU, без снайперов и DMR. Сборки, оружие, техника и рейтинг сезона.</p>
       <section class="server-card" id="live-server">
         <div>
           <p class="eyebrow">Сервер</p>
@@ -62,7 +63,12 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       if (liveScore) {
         const rows = Array.isArray(data.factions) ? data.factions : [];
         const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
-        liveScore.innerHTML = rows.map((row) => `<i>${esc(String(row.name ?? ""))} <b>${Number(row.score) || 0}</b></i>`).join("");
+        liveScore.innerHTML = rows.map((row) => {
+          const name = String(row.name ?? "");
+          const key = name.toLowerCase();
+          const tone = key.includes("valk") ? "valk" : key.includes("mant") ? "mant" : key.includes("lone") || key.includes("star") ? "lone" : "";
+          return `<i class="${tone}">${esc(name)} <b>${Number(row.score) || 0}</b></i>`;
+        }).join("");
       }
       if (liveNote) liveNote.textContent = "В браузере серверов WARDOGS найди это название.";
       paintFight(data);
@@ -121,7 +127,9 @@ const season = import.meta.env.GAME_SEASON ?? "03";
             return `<p class="fight-row">${who}<b>${Number(player.kills) || 0} уб.</b></p>`;
           }).join("")
           : `<p class="note">никого</p>`;
-        return `<section class="fight-team">
+        const key = name.toLowerCase();
+        const tone = key.includes("valk") ? "valk" : key.includes("mant") ? "mant" : key.includes("lone") || key.includes("star") ? "lone" : "";
+        return `<section class="fight-team ${tone}">
           <h3>${icon ? `<img src="${icon}" alt="" />` : ""}${esc(name)}<small>${hours}</small></h3>
           ${rows}
         </section>`;
