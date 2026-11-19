@@ -17,23 +17,26 @@ const season = import.meta.env.GAME_SEASON ?? "03";
         <a class="btn ghost" href="https://discord.com/channels/1387770606589706312/1562248789975244801" target="_blank" rel="noopener">Купить VIP</a>
       </div>
       <p class="stage-line">Сервер FOB: RU/EU, без снайперов и DMR. Рейтинг сезона и сквады.</p>
-      <section class="server-card" id="live-server">
-        <div>
-          <p class="eyebrow">Сервер</p>
-          <h2 id="live-name">FOB #1 [RU/EU] | 50v50 | NO SNIPER/DMR</h2>
-          <p class="note" id="live-note">В браузере серверов WARDOGS.</p>
-        </div>
-        <div class="live-stats">
-          <p><span>Онлайн</span><b id="live-players">0/100</b></p>
-          <p><span>Карта</span><b id="live-map">—</b></p>
-          <p><span>Режим</span><b id="live-mode">—</b></p>
-        </div>
-        <div class="live-score" id="live-score"></div>
-      </section>
-    </div>
-  </div>
-  <section class="season-lock">
-    <div id="fight">
+      <div class="home-board">
+        <div class="home-main">
+          <section class="server-card" id="live-server">
+            <div>
+              <p class="eyebrow">Сервер</p>
+              <h2 id="live-name">FOB #1 [RU/EU] | 50v50 | NO SNIPER/DMR</h2>
+              <p class="note" id="live-note">В браузере серверов WARDOGS.</p>
+            </div>
+            <div class="live-stats">
+              <p><span>Онлайн</span><b id="live-players">0/100</b></p>
+              <p><span>Карта</span><b id="live-map">—</b></p>
+              <p><span>Режим</span><b id="live-mode">—</b></p>
+            </div>
+            <div class="live-score" id="live-score"></div>
+          </section>
+          <section class="on-air" id="on-air">
+            <p class="eyebrow">В эфире</p>
+            <div id="on-air-list"><p class="note">Сейчас никто не стримит.</p></div>
+          </section>
+          <div id="fight">
       <div class="crawl">
         <span class="live-mark" id="fight-live" hidden>LIVE</span>
         <div class="crawl-window">
@@ -42,8 +45,18 @@ const season = import.meta.env.GAME_SEASON ?? "03";
         <p class="hot" id="fight-hot" hidden><b>☠</b> HOT</p>
       </div>
       <div id="fight-teams"></div>
+          </div>
+        </div>
+        <aside class="home-side">
+          <iframe class="discord-frame" title="Discord FOB" src="https://discord.com/widget?id=1387770606589706312&theme=dark" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"></iframe>
+          <section class="vip-card">
+            <p class="eyebrow">Купили VIP</p>
+            <div id="vip-list"><p class="note">Пока пусто.</p></div>
+          </section>
+        </aside>
+      </div>
     </div>
-  </section>
+  </div>
   <script>
     const liveName = document.querySelector("#live-name");
     const livePlayers = document.querySelector("#live-players");
@@ -313,7 +326,49 @@ const season = import.meta.env.GAME_SEASON ?? "03";
       }
       if (liveNote) liveNote.textContent = "Сервер сейчас не отвечает.";
     };
+    const onAirList = document.querySelector("#on-air-list");
+    const vipList = document.querySelector("#vip-list");
+    const escSide = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+    const paintSide = (data: { streams?: Array<{ name?: string; url?: string; platform?: string; viewers?: number; title?: string }>; vips?: Array<{ name?: string; kind?: string; until?: string }> }) => {
+      const streams = Array.isArray(data.streams) ? data.streams : [];
+      const vips = Array.isArray(data.vips) ? data.vips : [];
+      if (onAirList) {
+        onAirList.innerHTML = streams.length
+          ? streams.map((row) => {
+            const name = escSide(String(row.name || "Стример"));
+            const url = String(row.url || "");
+            const safe = /^https:\/\//.test(url) ? escSide(url) : "";
+            const platform = escSide(String(row.platform || ""));
+            const title = row.title ? escSide(String(row.title)) : "";
+            const viewers = Number(row.viewers) || 0;
+            const body = `<b>${name}</b><span>${platform}${viewers ? ` · ${viewers}` : ""}</span>${title ? `<span>${title}</span>` : ""}`;
+            return safe ? `<a class="on-air-card" href="${safe}" target="_blank" rel="noopener">${body}</a>` : `<div class="on-air-card">${body}</div>`;
+          }).join("")
+          : `<p class="note">Сейчас никто не стримит.</p>`;
+      }
+      if (vipList) {
+        vipList.innerHTML = vips.length
+          ? vips.map((row) => {
+            const kind = row.kind === "clanvip" ? "клановый" : "VIP";
+            const until = String(row.until || "");
+            const day = /^\d{4}-\d{2}-\d{2}$/.test(until) ? until.split("-").reverse().join(".") : "";
+            return `<p class="vip-row"><span>${escSide(String(row.name || "Игрок"))}</span><b>${kind}${day ? ` · до ${day}` : ""}</b></p>`;
+          }).join("")
+          : `<p class="note">Пока пусто.</p>`;
+      }
+    };
+    const pullSide = async () => {
+      try {
+        const response = await fetch("/api/side");
+        if (!response.ok) return;
+        paintSide(await response.json());
+      } catch {
+        // блоки остаются с пустой подписью
+      }
+    };
     pullServer();
+    pullSide();
     setInterval(pullServer, 10000);
+    setInterval(pullSide, 60000);
   </script>
 </Base>

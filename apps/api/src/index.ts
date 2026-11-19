@@ -1120,6 +1120,64 @@ app.post("/api/bot/refresh/:steamId", async (request, reply) => {
   return { ok: true, pulled, ...payload };
 });
 
+function sideList(raw: unknown) {
+  if (typeof raw !== "string" || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function cleanStreams(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const name = text(row.name, 40);
+    const url = text(row.url, 200);
+    const platform = text(row.platform, 16);
+    if (!name || !/^https:\/\/[^\s]+$/i.test(url) || !["twitch", "kick", "youtube"].includes(platform)) return [];
+    const viewers = Math.max(0, Math.min(1_000_000, Math.round(Number(row.viewers) || 0)));
+    return [{ name, url, platform, viewers, title: text(row.title, 120) }];
+  }).slice(0, 12);
+}
+
+function cleanVips(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const name = text(row.name, 40);
+    const kind = text(row.kind, 16);
+    const until = text(row.until, 10);
+    if (!name || (kind !== "vip" && kind !== "clanvip") || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return [];
+    return [{ name, kind, until }];
+  }).slice(0, 40);
+}
+
+app.get("/api/side", async () => {
+  const rows = await sql`SELECT streams, vips FROM home_side WHERE id = 1`;
+  const row = rows[0] as { streams?: string; vips?: string } | undefined;
+  return { streams: sideList(row?.streams), vips: sideList(row?.vips) };
+});
+
+app.post("/api/bot/side", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const body = asObject(request.body);
+  const streams = cleanStreams(body?.streams);
+  const vips = cleanVips(body?.vips);
+  if (streams === null && vips === null) return reply.code(400).send({ error: "bad_request" });
+  if (streams !== null) {
+    await sql`UPDATE home_side SET streams = ${JSON.stringify(streams)} WHERE id = 1`;
+  }
+  if (vips !== null) {
+    await sql`UPDATE home_side SET vips = ${JSON.stringify(vips)} WHERE id = 1`;
+  }
+  return { ok: true, streams: streams?.length ?? null, vips: vips?.length ?? null };
+});
+
 app.post("/api/bot/live", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   const body = request.body as { factions?: unknown; players?: unknown } | null;

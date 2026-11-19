@@ -303,3 +303,11 @@ CREATE TABLE IF NOT EXISTS feed_keys (
 
 ALTER TABLE squads ADD COLUMN IF NOT EXISTS about varchar(700) NOT NULL DEFAULT '';
 ALTER TABLE squads ADD COLUMN IF NOT EXISTS criteria varchar(700) NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS home_side (
+  id tinyint NOT NULL PRIMARY KEY,
+  streams text NOT NULL,
+  vips text NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO home_side (id, streams, vips) VALUES (1, '[]', '[]');
