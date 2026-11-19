@@ -130,6 +130,10 @@ async function paintAccount() {
       return;
     }
     const name = user.persona || user.steam_id;
+    const refresh = document.querySelector<HTMLAnchorElement>("#refresh-stats");
+    if (refresh && /^\d{17}$/.test(String(user.steam_id || ""))) {
+      refresh.href = `/auth/wardogs/start?next=/p&steamId=${user.steam_id}`;
+    }
     slot.innerHTML = `<a href="/p/?id=${user.steam_id}">${name}</a> <button class="btn ghost small" type="button" id="logout">Выйти</button>`;
     document.querySelector("#logout")?.addEventListener("click", () => {
       location.href = "/auth/logout";

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import https from "node:https";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { config } from "./config.js";
 import { dumpDatabase } from "./backup.js";
@@ -14,6 +15,35 @@ import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./serv
 import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
+
+function trackerRequest(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) {
+  return new Promise<Response>((resolve, reject) => {
+    const target = new URL(url);
+    const req = https.request({
+      hostname: target.hostname,
+      path: `${target.pathname}${target.search}`,
+      method: init.method || "GET",
+      headers: init.headers,
+      family: 4,
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        resolve(new Response(Buffer.concat(chunks), {
+          status: res.statusCode || 0,
+          headers: { "content-type": String(res.headers["content-type"] || "application/json") },
+        }));
+      });
+    });
+    const stop = (error: Error) => {
+      req.destroy(error);
+    };
+    init.signal?.addEventListener("abort", () => stop(Object.assign(new Error("timeout"), { name: "TimeoutError" })), { once: true });
+    req.on("error", reject);
+    if (init.body) req.write(init.body);
+    req.end();
+  });
+}
 
 const SORTS: Record<string, string> = {
   level: "wardog_level",
@@ -264,7 +294,7 @@ async function trackerGet(path: string, withKey: boolean, ms = 6_000) {
   try {
     const headers: Record<string, string> = { accept: "application/json", "user-agent": "wd-axis/career" };
     if (withKey && config.trackerKey) headers.authorization = `Bearer ${config.trackerKey}`;
-    const response = await fetch(`https://wardogstracker.gg${path}`, { headers, signal: wait.signal });
+    const response = await trackerRequest(`https://wardogstracker.gg${path}`, { headers, signal: wait.signal });
     wait.stop();
     const raw = await response.text();
     let json: unknown = null;
@@ -317,7 +347,7 @@ async function refreshCareers() {
   `;
   for (const row of due) {
     try {
-      const response = await fetch(`https://wardogstracker.gg/api/v1/connect/players/${row.steam_id}`, {
+      const response = await trackerRequest(`https://wardogstracker.gg/api/v1/connect/players/${row.steam_id}`, {
         headers: { authorization: `Bearer ${config.trackerKey}` },
         signal: AbortSignal.timeout(8_000),
       });
@@ -646,10 +676,24 @@ type Traded = {
   player?: { steamId?: string; stats?: Parameters<typeof saveCareer>[1] };
 };
 
+function steamHint(where: string) {
+  const match = where.match(/[?&]id=(\d{17})\b/);
+  return match?.[1] ?? "";
+}
+
 async function tradeWardogsCode(code: string): Promise<{ fail: string; traded: Traded | null }> {
+  let last: { fail: string; traded: Traded | null } = { fail: "token_err", traded: null };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    last = await tradeWardogsOnce(code);
+    if (!last.fail || last.fail === "expired") return last;
+  }
+  return last;
+}
+
+async function tradeWardogsOnce(code: string): Promise<{ fail: string; traded: Traded | null }> {
   let tokenStatus = 0;
   try {
-    const response = await fetch("https://wardogstracker.gg/api/v1/connect/token", {
+    const response = await trackerRequest("https://wardogstracker.gg/api/v1/connect/token", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.trackerKey}`,
@@ -657,7 +701,7 @@ async function tradeWardogsCode(code: string): Promise<{ fail: string; traded: T
         Accept: "application/json",
       },
       body: JSON.stringify({ code, redirect_uri: config.trackerRedirectUri }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(20_000),
     });
     tokenStatus = response.status;
     const raw = await response.text();
@@ -690,9 +734,28 @@ async function finishWardogsJob(ticket: string) {
   loginBusy.add(ticket);
   try {
     const { fail, traded } = await tradeWardogsCode(job.code);
-    const steamId = traded?.steamId || traded?.player?.steamId || "";
+    const steamId = traded?.steamId || traded?.player?.steamId || steamHint(job.where);
     if (!steamId || !/^\d{17}$/.test(steamId)) {
       await writeLoginJob({ ...job, code: "", status: "fail", fail: fail || "token_err" });
+      return;
+    }
+    if (!traded?.steamId && !traded?.player?.steamId) {
+      try {
+        await upsertUser(steamId);
+        const saved = await pullPublicCareer(steamId);
+        await writeLoginJob({
+          ...job,
+          code: "",
+          steamId,
+          where: `/p/?id=${steamId}`,
+          status: saved ? "ok" : "fail",
+          fail: saved ? "" : (fail || "empty"),
+          flag: "",
+        });
+      } catch (error) {
+        app.log.error(error);
+        await writeLoginJob({ ...job, code: "", steamId, status: "fail", fail: fail || "token_err" });
+      }
       return;
     }
     try {
