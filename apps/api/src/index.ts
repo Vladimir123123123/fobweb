@@ -12,6 +12,7 @@ import { bansFromPayload, punishmentsFor, rememberBans, syncBans } from "./punis
 import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
+import { VIP_ROSTER } from "./vip-roster.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 const SORTS: Record<string, string> = {
@@ -1152,15 +1153,27 @@ function cleanVips(value: unknown) {
     const name = text(row.name, 40);
     const kind = text(row.kind, 16);
     const until = text(row.until, 10);
-    if (!name || (kind !== "vip" && kind !== "clanvip") || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return [];
-    return [{ name, kind, until }];
-  }).slice(0, 40);
+    const steamId = text(row.steamId, 20);
+    if (!name || (kind !== "vip" && kind !== "clanvip")) return [];
+    if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) return [];
+    return [{ name, kind, until, steamId: /^\d{17}$/.test(steamId) ? steamId : "" }];
+  }).slice(0, 80);
+}
+
+function mergeVips(stored: Array<{ name: string; kind: string; until: string; steamId?: string }>) {
+  const keyOf = (row: { name: string; steamId?: string }) => (row.steamId ? row.steamId : row.name.toLowerCase());
+  const merged = new Map(VIP_ROSTER.map((row) => [keyOf(row), row]));
+  for (const row of stored) {
+    const key = keyOf(row);
+    if (!merged.has(key)) merged.set(key, { name: row.name, steamId: row.steamId || "", kind: row.kind === "clanvip" ? "clanvip" : "vip", until: row.until });
+  }
+  return [...merged.values()];
 }
 
 app.get("/api/side", async () => {
   const rows = await sql`SELECT streams, vips FROM home_side WHERE id = 1`;
   const row = rows[0] as { streams?: string; vips?: string } | undefined;
-  return { streams: sideList(row?.streams), vips: sideList(row?.vips) };
+  return { streams: sideList(row?.streams), vips: mergeVips(sideList(row?.vips)) };
 });
 
 app.post("/api/bot/side", async (request, reply) => {

@@ -1,0 +1,25 @@
+export type VipCard = { name: string; steamId: string; kind: "vip" | "clanvip"; until: string };
+
+export const VIP_ROSTER: VipCard[] = [
+  { name: "[FOB] DELATUS", steamId: "", kind: "vip", until: "" },
+  { name: "[FOB] Skipa", steamId: "76561198335468517", kind: "vip", until: "" },
+  { name: "[FOB] Muma", steamId: "76561197970353437", kind: "vip", until: "" },
+  { name: "[FOB] Alpinist", steamId: "76561198036099991", kind: "vip", until: "" },
+  { name: "[FOB] Faza", steamId: "76561198145925405", kind: "vip", until: "2027-02-12" },
+  { name: "[PUGS] ChiefS", steamId: "76561198127097504", kind: "clanvip", until: "2026-12-18" },
+  { name: "[KRIG] Wachtmeister", steamId: "76561199782621781", kind: "vip", until: "2026-12-18" },
+  { name: "[KRIG] СТАЗлиН", steamId: "", kind: "vip", until: "2026-12-18" },
+  { name: "[KRIG] Доминик Де КоКо", steamId: "76561198135239321", kind: "vip", until: "2026-12-18" },
+  { name: "[OCO] Markul", steamId: "76561199401400920", kind: "vip", until: "2026-12-18" },
+  { name: "[PAPA] dispise", steamId: "76561199434883916", kind: "vip", until: "2026-12-15" },
+  { name: "[KRIG] Star_Kir", steamId: "76561198122381125", kind: "clanvip", until: "2026-12-17" },
+  { name: "[KRIG] bruh", steamId: "76561199453802002", kind: "vip", until: "2026-12-17" },
+  { name: "[KRIG] dead inside 13 y.o.", steamId: "76561198174924646", kind: "vip", until: "2026-12-17" },
+  { name: "[KRIG] OmletKing", steamId: "76561198012409678", kind: "vip", until: "2026-12-17" },
+  { name: "[KRIEG] Gall", steamId: "76561198116313946", kind: "vip", until: "2026-12-17" },
+  { name: "[KRIG] Димкасян", steamId: "76561198020858708", kind: "vip", until: "2026-12-17" },
+  { name: "[KRIG] WOLCHIE", steamId: "76561198313393167", kind: "vip", until: "2026-12-17" },
+  { name: "Knight Tairus", steamId: "76561198067827889", kind: "vip", until: "2026-12-17" },
+  { name: "sixteen spb", steamId: "76561198326177457", kind: "vip", until: "2026-12-17" },
+  { name: "76561198196140033", steamId: "76561198196140033", kind: "vip", until: "2026-12-17" },
+];

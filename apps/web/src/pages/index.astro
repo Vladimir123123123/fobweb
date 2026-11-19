@@ -329,6 +329,45 @@ const season = import.meta.env.GAME_SEASON ?? "03";
     const onAirList = document.querySelector("#on-air-list");
     const vipList = document.querySelector("#vip-list");
     const escSide = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+    const boughtVip: Array<{ name: string; steamId: string; kind: string; until: string }> = [
+      { name: "[FOB] DELATUS", steamId: "", kind: "vip", until: "" },
+      { name: "[FOB] Skipa", steamId: "76561198335468517", kind: "vip", until: "" },
+      { name: "[FOB] Muma", steamId: "76561197970353437", kind: "vip", until: "" },
+      { name: "[FOB] Alpinist", steamId: "76561198036099991", kind: "vip", until: "" },
+      { name: "[FOB] Faza", steamId: "76561198145925405", kind: "vip", until: "2027-02-12" },
+      { name: "[PUGS] ChiefS", steamId: "76561198127097504", kind: "clanvip", until: "2026-12-18" },
+      { name: "[KRIG] Wachtmeister", steamId: "76561199782621781", kind: "vip", until: "2026-12-18" },
+      { name: "[KRIG] СТАЗлиН", steamId: "", kind: "vip", until: "2026-12-18" },
+      { name: "[KRIG] Доминик Де КоКо", steamId: "76561198135239321", kind: "vip", until: "2026-12-18" },
+      { name: "[OCO] Markul", steamId: "76561199401400920", kind: "vip", until: "2026-12-18" },
+      { name: "[PAPA] dispise", steamId: "76561199434883916", kind: "vip", until: "2026-12-15" },
+      { name: "[KRIG] Star_Kir", steamId: "76561198122381125", kind: "clanvip", until: "2026-12-17" },
+      { name: "[KRIG] bruh", steamId: "76561199453802002", kind: "vip", until: "2026-12-17" },
+      { name: "[KRIG] dead inside 13 y.o.", steamId: "76561198174924646", kind: "vip", until: "2026-12-17" },
+      { name: "[KRIG] OmletKing", steamId: "76561198012409678", kind: "vip", until: "2026-12-17" },
+      { name: "[KRIEG] Gall", steamId: "76561198116313946", kind: "vip", until: "2026-12-17" },
+      { name: "[KRIG] Димкасян", steamId: "76561198020858708", kind: "vip", until: "2026-12-17" },
+      { name: "[KRIG] WOLCHIE", steamId: "76561198313393167", kind: "vip", until: "2026-12-17" },
+      { name: "Knight Tairus", steamId: "76561198067827889", kind: "vip", until: "2026-12-17" },
+      { name: "sixteen spb", steamId: "76561198326177457", kind: "vip", until: "2026-12-17" },
+      { name: "76561198196140033", steamId: "76561198196140033", kind: "vip", until: "2026-12-17" },
+    ];
+    const paintVips = (vips: Array<{ name?: string; steamId?: string; kind?: string; until?: string }>) => {
+      if (!vipList) return;
+      vipList.innerHTML = vips.length
+        ? vips.map((row) => {
+          const kind = row.kind === "clanvip" ? "клановый" : "VIP";
+          const until = String(row.until || "");
+          const day = /^\d{4}-\d{2}-\d{2}$/.test(until) ? until.split("-").reverse().join(".") : "";
+          const when = day ? `до ${day}` : "навсегда";
+          const steam = String(row.steamId || "");
+          const label = escSide(String(row.name || "Игрок"));
+          const who = /^\d{17}$/.test(steam) ? `<a href="/p?id=${steam}">${label}</a>` : label;
+          return `<p class="vip-row"><span>${who}</span><b>${kind} · ${when}</b></p>`;
+        }).join("")
+        : `<p class="note">Пока пусто.</p>`;
+    };
+    paintVips(boughtVip);
     const paintSide = (data: { streams?: Array<{ name?: string; url?: string; platform?: string; viewers?: number; title?: string }>; vips?: Array<{ name?: string; kind?: string; until?: string }> }) => {
       const streams = Array.isArray(data.streams) ? data.streams : [];
       const vips = Array.isArray(data.vips) ? data.vips : [];
@@ -346,16 +385,7 @@ const season = import.meta.env.GAME_SEASON ?? "03";
           }).join("")
           : `<p class="note">Сейчас никто не стримит.</p>`;
       }
-      if (vipList) {
-        vipList.innerHTML = vips.length
-          ? vips.map((row) => {
-            const kind = row.kind === "clanvip" ? "клановый" : "VIP";
-            const until = String(row.until || "");
-            const day = /^\d{4}-\d{2}-\d{2}$/.test(until) ? until.split("-").reverse().join(".") : "";
-            return `<p class="vip-row"><span>${escSide(String(row.name || "Игрок"))}</span><b>${kind}${day ? ` · до ${day}` : ""}</b></p>`;
-          }).join("")
-          : `<p class="note">Пока пусто.</p>`;
-      }
+      if (vips.length) paintVips(vips);
     };
     const pullSide = async () => {
       try {
