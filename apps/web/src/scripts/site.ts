@@ -149,40 +149,6 @@ document.querySelector("#consent-need")?.addEventListener("click", () => applyCo
 
 paintAccount();
 
-document.querySelector("#refresh-stats")?.addEventListener("click", async () => {
-  const button = document.querySelector<HTMLButtonElement>("#refresh-stats");
-  if (!button || button.disabled) return;
-  button.disabled = true;
-  const me = await fetch("/api/me").then((response) => response.json()).catch(() => null);
-  const steamId = me?.user?.steam_id ? String(me.user.steam_id) : "";
-  if (!steamId) {
-    location.href = `/auth/steam?next=${encodeURIComponent("/auth/wardogs/start?next=/ratings")}`;
-    return;
-  }
-  try {
-    const feed = await fetch(`https://wardogstracker.gg/api/v1/players/${steamId}`, { signal: AbortSignal.timeout(8000) });
-    const pack = feed.ok ? await feed.json().catch(() => null) : null;
-    const response = await fetch("/api/me/sync", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(pack && pack.player ? { player: pack.player } : {}),
-      signal: AbortSignal.timeout(12000),
-    });
-    if (response.status === 401) {
-      location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
-      return;
-    }
-    const result = await response.json().catch(() => ({})) as { saved?: boolean; unchanged?: boolean };
-    if (result.saved) {
-      location.href = result.unchanged ? `/p/?id=${steamId}&sync=same` : `/p/?id=${steamId}`;
-      return;
-    }
-  } catch {
-    // открытая база молчит — снимем через окно Tracker
-  }
-  location.href = `/auth/wardogs/start?next=/p&steamId=${steamId}`;
-});
-
 const menu = document.querySelector<HTMLButtonElement>(".menu");
 menu?.addEventListener("click", () => {
   const open = document.body.classList.toggle("nav-open");
