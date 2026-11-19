@@ -38,11 +38,34 @@ import Base from "../layouts/Base.astro";
             <small>${label}</small>
           </span>
         </a>`;
-      const roster = rosterRows.map((member) => `
-        <article class="mate${member.role === "leader" ? " lead" : ""}">
-          ${person(member, member.role === "leader" ? "лидер" : "в составе")}
+      const activity = data.activity as { days: string[]; rows: Array<{ steamId: string; cells: Array<{ place: number; minutes: number; kills: number } | null> }> } | null;
+      const names = new Map(rosterRows.map((member) => [member.steam_id, member.persona ?? member.steam_id]));
+      const activityTable = leader && activity ? `
+        <section class="activity">
+          <div class="hall-head">
+            <h2>Активность</h2>
+            <p class="note">Место в скваде за день, по времени на сервере</p>
+          </div>
+          <div class="activity-scroll">
+            <table>
+              <thead><tr><th>Участник</th>${activity.days.map((day) => `<th>${esc(day)}</th>`).join("")}</tr></thead>
+              <tbody>
+                ${activity.rows.map((row) => `<tr>
+                  <td><a href="/p?id=${row.steamId}">${esc(names.get(row.steamId) ?? row.steamId)}</a></td>
+                  ${row.cells.map((cell) => `<td>${cell ? `<b>${cell.place}</b><small>${cell.minutes} мин${cell.kills ? ` · ${cell.kills}` : ""}</small>` : "—"}</td>`).join("")}
+                </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        </section>` : "";
+      const roster = rosterRows.map((member) => {
+        const label = member.role === "leader" ? "лидер" : "в составе";
+        return `
+        <article class="mate${member.role === "leader" ? " lead" : ""}" data-member="${member.steam_id}" data-label="${label}">
+          ${person(member, label)}
           ${member.steam_id === mine ? "" : `<span class="mate-actions"><button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>${leader && member.role !== "leader" ? `<button class="btn ghost small" type="button" data-remove="${member.steam_id}">Исключить</button>` : ""}</span>`}
-        </article>`).join("");
+        </article>`;
+      }).join("");
       const queue = applications.map((member) => `
         <article class="mate wait">
           ${person(member, "заявка")}
@@ -89,9 +112,10 @@ import Base from "../layouts/Base.astro";
         ${queue ? `<div class="hall-head"><h2>Заявки</h2><p class="note">${applications.length}</p></div><div class="hall-roster">${queue}</div>` : ""}
         <div class="hall-head">
           <h2>Состав</h2>
-          <p class="note">${(() => { const n = rosterRows.length; const mod10 = n % 10; const mod100 = n % 100; const word = mod10 === 1 && mod100 !== 11 ? "человек" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "человека" : "человек"; return `${n} ${word}`; })()}</p>
+          <p class="note">${(() => { const n = rosterRows.length; const mod10 = n % 10; const mod100 = n % 100; const word = mod10 === 1 && mod100 !== 11 ? "человек" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "человека" : "человек"; return `${n} ${word}`; })()} · <span id="on-server">смотрим сервер</span></p>
         </div>
         <div class="hall-roster">${roster || "<p>В составе пока никого.</p>"}</div>
+        ${activityTable}
         <form id="report-form" class="report" hidden>
           <p>Жалоба на <strong id="report-who"></strong></p>
           <textarea id="report-note" maxlength="400" placeholder="Что человек сделал. Минимум 10 символов."></textarea>
@@ -99,6 +123,27 @@ import Base from "../layouts/Base.astro";
         </form>
         <p class="note" id="squad-note"></p>
       `;
+      const paintOnline = async () => {
+        const live = await fetch("/api/server").then((item) => item.ok ? item.json() : null).catch(() => null);
+        const sides = new Map<string, string>();
+        for (const team of live?.teams ?? []) {
+          for (const player of team.players ?? []) sides.set(String(player.steamId), String(team.name || ""));
+        }
+        let count = 0;
+        document.querySelectorAll<HTMLElement>("[data-member]").forEach((card) => {
+          const side = sides.get(card.dataset.member ?? "");
+          const here = side !== undefined;
+          card.classList.toggle("live", here);
+          if (here) count += 1;
+          const small = card.querySelector("small");
+          const base = card.dataset.label ?? "";
+          if (small) small.textContent = here ? `${base} · на сервере` : base;
+        });
+        const note = document.querySelector("#on-server");
+        if (note) note.textContent = count ? `${count} на сервере` : "на сервере никого";
+      };
+      void paintOnline();
+      window.setInterval(() => void paintOnline(), 20_000);
       document.querySelector("#join")?.addEventListener("click", async () => {
         const note = document.querySelector("#squad-note")!;
         const join = await fetch(`/api/squads/${id}/join`, { method: "POST" });

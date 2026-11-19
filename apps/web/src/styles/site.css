@@ -860,6 +860,17 @@ label.check input { width: auto; }
 .mate-actions { display: flex; flex-direction: column; gap: 6px; }
 .mate.lead { border-color: #1e6b34; }
 .mate.lead small { color: var(--green); }
+.mate.live { border-color: rgba(61, 186, 122, 0.7); order: -1; }
+.mate.live small { color: #3dba7a; }
+.activity { margin-top: 22px; border: 1px solid rgba(239, 170, 24, 0.35); background: #101410; }
+.activity .hall-head { padding: 14px 16px 0; }
+.activity-scroll { overflow-x: auto; }
+.activity table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.activity th, .activity td { padding: 8px 12px; text-align: left; white-space: nowrap; vertical-align: middle; border-top: 1px solid var(--line); }
+.activity th { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.activity a { color: inherit; text-decoration: none; }
+.activity b { font-family: Oswald, "Golos Text", sans-serif; color: #efaa18; font-size: 16px; }
+.activity small { display: block; color: var(--muted); font-size: 11px; }
 .mate-report {
   border: 0;
   background: transparent;

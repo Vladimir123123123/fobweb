@@ -10,7 +10,7 @@ import { SEARCH_TAGS } from "./seo.js";
 import { combatCard } from "./combat-card.js";
 import { bansFromPayload, punishmentsFor, rememberBans, syncBans } from "./punishments.js";
 import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
-import { fightSnapshot, ingestCombat, rememberLive } from "./server-combat.js";
+import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
@@ -1538,6 +1538,10 @@ app.get("/api/squads/:id", async (request, reply) => {
       SELECT squad_id, status FROM squad_members WHERE steam_id = ${viewer} LIMIT 1
     `
     : [];
+  const leader = viewer === squad.owner_steam_id;
+  const activity = leader
+    ? await squadActivity(members.filter((member) => member.status === "member").map((member) => String(member.steam_id)))
+    : null;
   return {
     squad: {
       ...squad,
@@ -1545,8 +1549,9 @@ app.get("/api/squads/:id", async (request, reply) => {
       banner: squad.banner_path ? `/api/media/${squad.banner_path}` : "",
     },
     members,
-    mine: viewer === squad.owner_steam_id,
+    mine: leader,
     seat: seatRows[0] ?? null,
+    activity,
   };
 });
 

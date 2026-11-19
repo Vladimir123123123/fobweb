@@ -113,6 +113,88 @@ export function rememberLive(factions: Array<{ name: string; score: number }>, p
   rememberRoster(players);
   noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
+  if (!config.rconHost || !config.rconPassword) void notePresence(players.map((player) => player.steamId));
+}
+
+function moscowDay(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function moscowSpan(count: number) {
+  const days: string[] = [];
+  const now = new Date();
+  for (let ago = count - 1; ago >= 0; ago -= 1) days.push(moscowDay(new Date(now.getTime() - ago * 24 * 60 * 60 * 1000)));
+  return days;
+}
+
+function dayKey(value: unknown) {
+  if (value instanceof Date) {
+    const pad = (part: number) => String(part).padStart(2, "0");
+    return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
+  }
+  return String(value ?? "").slice(0, 10);
+}
+
+/** Каждые 20 секунд дописываем время на сервере в московский день. Разрыв больше 90 секунд — одна новая отметка. */
+export async function notePresence(steamIds: string[], kills = new Map<string, number>()) {
+  const day = moscowDay();
+  for (const steamId of steamIds) {
+    if (!/^\d{17}$/.test(steamId)) continue;
+    const gained = Math.max(0, Math.round(kills.get(steamId) ?? 0));
+    await sql`
+      INSERT INTO presence_days (steam_id, day, seconds, kills, last_seen)
+      VALUES (${steamId}, ${day}, 20, ${gained}, now())
+      ON DUPLICATE KEY UPDATE
+        seconds = seconds + LEAST(90, GREATEST(1, TIMESTAMPDIFF(SECOND, last_seen, now()))),
+        kills = kills + ${gained},
+        last_seen = now()
+    `;
+  }
+}
+
+export type DayCell = { place: number; minutes: number; kills: number };
+
+/** Место в скваде за каждый из семи московских дней. Считается время на сервере, при равенстве — убийства. */
+export async function squadActivity(steamIds: string[]) {
+  const ids = [...new Set(steamIds.filter((id) => /^\d{17}$/.test(id)))];
+  const days = moscowSpan(7);
+  const labels = days.map((day) => {
+    const [, month, date] = day.split("-");
+    return `${date}.${month}`;
+  });
+  if (!ids.length) return { days: labels, rows: [] as Array<{ steamId: string; cells: Array<DayCell | null> }> };
+  const marks = ids.map(() => "?").join(", ");
+  const stored = await sql.unsafe<Array<{ steam_id: string; day: unknown; seconds: number; kills: number }>>(
+    `SELECT steam_id, day, seconds, kills FROM presence_days WHERE day >= ? AND steam_id IN (${marks})`,
+    [days[0], ...ids],
+  );
+  const byDay = new Map<string, Array<{ steamId: string; seconds: number; kills: number }>>();
+  for (const row of stored) {
+    const key = dayKey(row.day);
+    const bucket = byDay.get(key) ?? [];
+    bucket.push({ steamId: String(row.steam_id), seconds: Number(row.seconds) || 0, kills: Number(row.kills) || 0 });
+    byDay.set(key, bucket);
+  }
+  const cells = new Map<string, Map<string, DayCell>>();
+  for (const day of days) {
+    const present = (byDay.get(day) ?? []).filter((row) => row.seconds > 0);
+    present.sort((a, b) => b.seconds - a.seconds || b.kills - a.kills || a.steamId.localeCompare(b.steamId));
+    present.forEach((row, index) => {
+      const own = cells.get(row.steamId) ?? new Map<string, DayCell>();
+      own.set(day, { place: index + 1, minutes: Math.max(1, Math.round(row.seconds / 60)), kills: row.kills });
+      cells.set(row.steamId, own);
+    });
+  }
+  const rows = ids.map((steamId) => ({
+    steamId,
+    cells: days.map((day) => cells.get(steamId)?.get(day) ?? null),
+  }));
+  rows.sort((a, b) => {
+    const left = a.cells[a.cells.length - 1]?.place ?? 1000;
+    const right = b.cells[b.cells.length - 1]?.place ?? 1000;
+    return left - right || a.steamId.localeCompare(b.steamId);
+  });
+  return { days: labels, rows };
 }
 
 async function refreshHours(steamIds: string[]) {
@@ -204,6 +286,7 @@ export async function ingestCombat(): Promise<number> {
   rememberRoster(players);
   noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
+  const gained = new Map<string, number>();
   for (const player of players) {
     const existing = await sql<Array<{ kills: number; deaths: number; match_kills: number; match_deaths: number; persona: string | null; avatar: string | null }>>`
       SELECT kills, deaths, match_kills, match_deaths, persona, avatar FROM server_combat WHERE steam_id = ${player.steamId}
@@ -238,6 +321,8 @@ export async function ingestCombat(): Promise<number> {
         seen_at = now(),
         first_seen = COALESCE(first_seen, VALUES(first_seen))
     `;
+    gained.set(player.steamId, Math.max(0, kills.lifetime - (prior?.kills ?? 0)));
   }
+  await notePresence(players.map((player) => player.steamId), gained);
   return players.length;
 }

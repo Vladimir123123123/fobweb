@@ -287,6 +287,15 @@ CREATE TABLE IF NOT EXISTS guides (
   updated_at datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS presence_days (
+  steam_id varchar(20) NOT NULL,
+  day date NOT NULL,
+  seconds int NOT NULL DEFAULT 0,
+  kills int NOT NULL DEFAULT 0,
+  last_seen datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (steam_id, day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS feed_keys (
   name varchar(40) PRIMARY KEY,
   value varchar(80) NOT NULL
