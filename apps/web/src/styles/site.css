@@ -147,14 +147,20 @@ p { color: var(--muted); line-height: 1.55; }
   display: block;
   margin: 28px 0 22px;
 }
-.stage {
+.home-hero {
   position: relative;
-  width: 100vw;
-  min-height: 640px;
-  margin-top: -36px;
-  margin-left: calc(50% - 50vw);
   display: grid;
   align-items: end;
+  min-height: 640px;
+  margin-top: -36px;
+}
+.stage {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  margin: 0 0 0 -50vw;
   overflow: hidden;
   background: #0c0f0d;
 }
@@ -185,8 +191,8 @@ p { color: var(--muted); line-height: 1.55; }
 .stage-copy {
   position: relative;
   z-index: 1;
-  width: min(1120px, calc(100% - 48px));
-  margin: 0 auto;
+  width: auto;
+  margin: 0;
   padding: 84px 0 32px;
 }
 .stage h1 {
@@ -1563,7 +1569,7 @@ body.fit .foot { padding: 8px 0 10px; }
   .wrow span:nth-child(3),
   .wrow span:nth-child(4),
   .wrow span:nth-child(5) { display: none; }
-  .stage { min-height: 520px; }
+  .home-hero { min-height: 520px; }
   .stage::after {
     background:
       linear-gradient(180deg, rgba(12, 15, 13, 0.42) 0%, rgba(12, 15, 13, 0.55) 42%, rgba(12, 15, 13, 0.88) 100%);

@@ -3,9 +3,11 @@ import Base from "../layouts/Base.astro";
 const season = import.meta.env.GAME_SEASON ?? "03";
 ---
 <Base title="FOB — сервер WARDOGS СНГ, 50 на 50" description="Сервер FOB #1 для WARDOGS: 50 на 50, RU/EU, без снайперов и DMR. Рейтинг игроков и сквады.">
+  <div class="home-hero">
   <section class="stage">
     <img class="stage-photo" id="battle-map" src="/brand/maps/ozeti.webp" alt="" />
     <canvas class="battle" id="battle"></canvas>
+  </section>
     <div class="stage-copy">
       <p class="eyebrow">FOB · сезон {season} · 50 на 50</p>
       <h1>WARDOGS</h1>
@@ -29,8 +31,8 @@ const season = import.meta.env.GAME_SEASON ?? "03";
         <div class="live-score" id="live-score"></div>
       </section>
     </div>
-  </section>
-  <section class="wrap season-lock">
+  </div>
+  <section class="season-lock">
     <div id="fight">
       <div class="crawl">
         <span class="live-mark" id="fight-live" hidden>LIVE</span>
