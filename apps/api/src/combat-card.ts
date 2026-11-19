@@ -133,7 +133,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     SELECT ended_at, server_name, map_name, minutes, faction, result, place, field_size,
            kills, deaths, headshots, teamkills, weapon
     FROM played_matches
-    WHERE steam_id = ${steamId}
+    WHERE steam_id = ${steamId} AND (map_name <> '' OR result <> '')
     ORDER BY ended_at DESC
     LIMIT 40
   `;
@@ -141,7 +141,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     SELECT SUM(result = 'win') AS wins, SUM(result IN ('win', 'loss')) AS decided,
            COUNT(*) AS n, MAX(kills) AS best
     FROM played_matches
-    WHERE steam_id = ${steamId}
+    WHERE steam_id = ${steamId} AND (map_name <> '' OR result <> '')
   `;
   const history = historyRows.map((item) => {
     const kills = num(item.kills);
@@ -166,7 +166,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const favoriteRows = await sql<Array<{ faction: string }>>`
     SELECT faction
     FROM played_matches
-    WHERE steam_id = ${steamId} AND faction <> ''
+    WHERE steam_id = ${steamId} AND faction <> '' AND (map_name <> '' OR result <> '')
     GROUP BY faction
     ORDER BY COUNT(*) DESC, MAX(ended_at) DESC
     LIMIT 1

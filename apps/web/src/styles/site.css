@@ -1153,14 +1153,20 @@ tbody tr:hover { background: rgba(47, 107, 255, 0.08); }
 .fight-card-rivals { display: grid; gap: 8px; padding: 14px 0; }
 .fight-card-rivals p { display: flex; justify-content: space-between; gap: 12px; margin: 0; }
 .fight-card-guns { display: grid; gap: 8px; }
-.fight-card-guns p { position: relative; display: flex; justify-content: space-between; gap: 12px; margin: 0; min-height: 22px; }
+.fight-card-guns p { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; min-height: 36px; padding-bottom: 6px; }
+.fight-card-guns img { width: 72px; height: 28px; object-fit: contain; flex: none; }
+.fight-card-guns b { flex: 1; }
 .fight-card-guns i { position: absolute; left: 0; bottom: 0; height: 3px; background: #e4b04a; }
+.piece { display: inline-flex; align-items: center; gap: 8px; }
+.piece img { width: 22px; height: 22px; object-fit: contain; flex: none; }
+.piece.map img { width: 56px; height: 36px; object-fit: cover; border: 1px solid rgba(239, 170, 24, 0.35); }
+.piece.gun img { width: 64px; height: 24px; object-fit: contain; }
 .fight-card .note { margin: 10px 0 4px; }
-.match-log { margin-top: 14px; border: 1px solid var(--line); background: #10131a; }
+.match-log { margin-top: 14px; border: 1px solid rgba(239, 170, 24, 0.35); background: #101410; }
 .match-log header { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px 0; color: var(--muted); font-size: 13px; }
 .match-scroll { overflow-x: auto; }
-.match-log table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: 13px; }
-.match-log th, .match-log td { padding: 10px 12px; text-align: left; white-space: nowrap; border-top: 1px solid var(--line); }
+.match-log table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px; }
+.match-log th, .match-log td { padding: 10px 12px; text-align: left; white-space: nowrap; vertical-align: middle; border-top: 1px solid var(--line); }
 .match-log th { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
 .match-log td.win { color: #3dba7a; }
 .match-log td.loss { color: #ff5a4a; }

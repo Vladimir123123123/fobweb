@@ -1,11 +1,18 @@
 ---
 import Base from "../layouts/Base.astro";
+import catalog from "../data/catalog.json";
+
+const gunIcons: Record<string, string> = {};
+for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
+  if (gun.name && gun.icon && /^[a-z0-9_]+\.webp$/.test(gun.icon)) gunIcons[gun.name.toLowerCase()] = gun.icon;
+}
 ---
 <Base title="Профиль — WARDOGS СНГ">
-  <div id="profile"><p>Загрузка профиля.</p></div>
+  <div id="profile" data-guns={JSON.stringify(gunIcons)}><p>Загрузка профиля.</p></div>
 </Base>
 <script>
   const root = document.querySelector("#profile")!;
+  const gunIcons = JSON.parse(root.getAttribute("data-guns") || "{}") as Record<string, string>;
   const params = new URLSearchParams(location.search);
   const id = params.get("id") ?? "";
   const sync = params.get("sync") ?? "";
@@ -146,7 +153,8 @@ import Base from "../layouts/Base.astro";
       } | null;
       const resultLabel = (result: string | undefined) => result === "win" ? "Выиграно" : result === "loss" ? "Потеряно" : result === "leave" ? "Досрочный выход" : "—";
       const resultClass = (result: string | undefined) => result === "win" ? "win" : result === "loss" ? "loss" : "";
-      const matches = combat?.history ?? [];
+      const matches = (combat?.history ?? []).filter((item) => String(item.map || "").trim() || String(item.result || "").trim());
+      const matchTotal = matches.length < 40 ? matches.length : (combat?.matches ?? matches.length);
       const punishments = (profile.punishments ?? []) as Array<{ kind?: string; reason?: string; startedAt?: string | null; untilAt?: string | null; active?: boolean; liftedAt?: string | null }>;
       const term = (item: { untilAt?: string | null; active?: boolean; liftedAt?: string | null }) => item.untilAt ? `до ${stamp(item.untilAt)}` : item.active ? "до снятия" : item.liftedAt ? `снято ${stamp(item.liftedAt)}` : "—";
       const portraits: Record<string, string> = {
@@ -162,6 +170,33 @@ import Base from "../layouts/Base.astro";
         if (key.includes("lone")) return "lone";
         return "";
       };
+      const sideMark = (name: string) => {
+        const key = name.toLowerCase();
+        if (key.includes("valk")) return "/brand/factions/vk.png";
+        if (key.includes("mant")) return "/brand/factions/mc.png";
+        if (key.includes("lone") || key.includes("star")) return "/brand/factions/ls.png";
+        return "";
+      };
+      const sideLabel = (name: string) => {
+        const label = name.trim();
+        const key = label.toLowerCase();
+        if (!label || key === "white" || key === "unknown") return "";
+        return label;
+      };
+      const mapCard = (name: string) => {
+        const key = name.toLowerCase();
+        if (key.includes("ozet") || key.includes("madrid") || key.includes("europe")) return { file: "ozeti", title: "Ozeti" };
+        if (key.includes("sabat") || key.includes("moscow") || key.includes("russia")) return { file: "sabatulo", title: "Sabatulo" };
+        if (key.includes("bakur") || key.includes("kavkaz")) return { file: "bakurani", title: "Bakurani" };
+        if (key.includes("zesta") || key.includes("america") || key.includes("detroit")) return { file: "zestafona", title: "Zestafona" };
+        return null;
+      };
+      const gunIcon = (name: string) => {
+        const key = name.trim().toLowerCase();
+        if (!key || key === "default" || key === "неизвестно") return "";
+        return (gunIcons as Record<string, string>)[key] || "";
+      };
+      const piece = (icon: string, label: string, kind = "") => `<span class="piece${kind ? ` ${kind}` : ""}">${icon ? `<img src="${icon}" alt="" />` : ""}<span>${esc(label)}</span></span>`;
       const meter = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${num(value)}${suffix}`;
       const rival = (row: { name?: string; count?: number } | null | undefined) => row?.name ? `${esc(row.name)} · ${num(row.count)}×` : "—";
       const weapons = combat?.weapons ?? [];
@@ -241,7 +276,7 @@ import Base from "../layouts/Base.astro";
               <div><span>Самое дальнее убийство</span><b>${meter(combat.longest, " м")}</b></div>
               <div><span>Ср. дистанция</span><b>${meter(combat.average, " м")}</b></div>
               <div><span>Лучший матч</span><b>${combat.bestMatch == null ? "—" : `${num(combat.bestMatch)} убийств`}</b></div>
-              <div><span>Матчи</span><b>${combat.matches == null ? "—" : `${num(combat.matches)} <small>по ${combat.perMatch ?? "—"} убийств каждый</small>`}</b></div>
+              <div><span>Матчи</span><b>${matchTotal ? `${num(matchTotal)} <small>по ${combat.perMatch ?? "—"} убийств каждый</small>` : "—"}</b></div>
               <div><span>Основная сторона</span><b class="${factionTone(String(combat.faction || ""))}">${esc(String(combat.faction || "").trim()) || "—"}</b></div>
               <div><span>Убийства своих</span><b>${meter(combat.teamkills)}</b></div>
               <div><span>Винрейт</span><b>${combat.winrate == null ? "—" : `${Number(combat.winrate).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`}</b></div>
@@ -253,7 +288,11 @@ import Base from "../layouts/Base.astro";
             </div>
             ${weapons.length ? `<div class="fight-card-guns">
               <p class="eyebrow">Оружие</p>
-              ${weapons.map((gun) => `<p><i style="width:${Math.round(((Number(gun.kills) || 0) / topGun) * 100)}%"></i><b>${esc(gun.name || "неизвестно")}</b><span>${num(gun.kills)} · ${num(gun.headshots)} HS</span></p>`).join("")}
+              ${weapons.map((gun) => {
+                const name = String(gun.name || "неизвестно");
+                const icon = gunIcon(name);
+                return `<p><i style="width:${Math.round(((Number(gun.kills) || 0) / topGun) * 100)}%"></i>${icon ? `<img src="/art/${icon}" alt="" />` : ""}<b>${esc(name)}</b><span>${num(gun.kills)} · ${num(gun.headshots)} HS</span></p>`;
+              }).join("")}
             </div>` : `<p class="note">Оружие, хедшоты и дистанция появятся со следующими убийствами, которые пришлёт сервер.</p>`}
             ${played ? `<p class="note">${played}</p>` : ""}
           </section>
@@ -265,14 +304,22 @@ import Base from "../layouts/Base.astro";
             <div class="match-scroll">
               <table>
                 <thead>
-                  <tr><th>Завершено</th><th>Сервер</th><th>Карта</th><th>Сторона</th><th>Результат</th><th>Место</th><th>У</th><th>С</th><th>К/Д</th><th>ХШ</th><th>ТК</th><th>Оружие</th></tr>
+                  <tr>${matches.some((item) => stamp(item.endedAt)) ? "<th>Завершено</th>" : ""}${matches.some((item) => String(item.server || "").trim()) ? "<th>Сервер</th>" : ""}<th>Карта</th><th>Сторона</th><th>Результат</th><th>Место</th><th>У</th><th>С</th><th>К/Д</th><th>ХШ</th><th>ТК</th><th>Оружие</th></tr>
                 </thead>
                 <tbody>
-                  ${matches.map((item) => `<tr>
-                    <td>${esc(stamp(item.endedAt) || "—")}</td>
-                    <td>${esc(item.server || "—")}</td>
-                    <td>${esc(item.map || "—")}${item.minutes ? ` · ${num(item.minutes)} мин` : ""}</td>
-                    <td class="${factionTone(String(item.faction || ""))}">${esc(item.faction || "—")}</td>
+                  ${matches.map((item) => {
+                    const known = mapCard(String(item.map || ""));
+                    const mapTitle = known?.title || String(item.map || "");
+                    const mapCell = mapTitle ? piece(known ? `/brand/maps/${known.file}.webp` : "", `${mapTitle}${item.minutes ? ` · ${num(item.minutes)} мин` : ""}`, "map") : "—";
+                    const side = sideLabel(String(item.faction || ""));
+                    const sideCell = side ? piece(sideMark(side), side) : "—";
+                    const gun = String(item.weapon || "").trim();
+                    const gunCell = gun && gun.toLowerCase() !== "default" ? piece(gunIcon(gun) ? `/art/${gunIcon(gun)}` : "", gun, "gun") : "—";
+                    return `<tr>
+                    ${stamp(item.endedAt) || matches.some((row) => stamp(row.endedAt)) ? `<td>${esc(stamp(item.endedAt) || "—")}</td>` : ""}
+                    ${String(item.server || "").trim() || matches.some((row) => String(row.server || "").trim()) ? `<td>${esc(item.server || "—")}</td>` : ""}
+                    <td>${mapCell}</td>
+                    <td class="${factionTone(side)}">${sideCell}</td>
                     <td class="${resultClass(item.result)}">${resultLabel(item.result)}</td>
                     <td>${item.place ? `#${num(item.place)}${item.field ? ` из ${num(item.field)}` : ""}` : "—"}</td>
                     <td>${num(item.kills)}</td>
@@ -280,8 +327,9 @@ import Base from "../layouts/Base.astro";
                     <td>${item.kd == null ? "—" : Number(item.kd).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td>${num(item.headshots)}</td>
                     <td>${num(item.teamkills)}</td>
-                    <td>${esc(item.weapon || "—")}</td>
-                  </tr>`).join("")}
+                    <td>${gunCell}</td>
+                  </tr>`;
+                  }).join("")}
                 </tbody>
               </table>
             </div>
