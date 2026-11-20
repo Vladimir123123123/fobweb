@@ -16,6 +16,7 @@ import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
 import { adminQuestBoard, insertQuest, publicQuests, questInput, removeQuest, saveQuest, startQuest } from "./quests.js";
 import { adminShop, buyProduct, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
+import { weekBoard } from "./week.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 function trackerRequest(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) {
@@ -1291,6 +1292,11 @@ app.post("/api/bot/bans", async (request, reply) => {
   const bans = bansFromPayload(body.bans).slice(0, 500);
   await rememberBans(bans);
   return { ok: true, bans: bans.length };
+});
+
+app.get("/api/bot/week", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return weekBoard();
 });
 
 app.get("/api/bot/board", async (request, reply) => {

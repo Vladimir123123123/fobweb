@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { absorbFeed } from "./match-history.js";
+import { absorbFeed, when } from "./match-history.js";
 import { sql } from "./db.js";
 
 const HEADSHOT = "Headshot";
@@ -58,11 +58,6 @@ function tagged(tags: unknown, needle: string) {
 function steam(value: unknown) {
   const id = String(value || "").trim();
   return /^\d{17}$/.test(id) ? id : "";
-}
-
-function when(value: unknown) {
-  const date = new Date(String(value || ""));
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function feedToken() {

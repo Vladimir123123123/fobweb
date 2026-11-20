@@ -12,9 +12,26 @@ function steam(value: unknown) {
   return /^\d{17}$/.test(id) ? id : "";
 }
 
-function when(value: unknown) {
-  const date = new Date(String(value || ""));
-  return Number.isNaN(date.getTime()) ? null : date;
+export function when(value: unknown) {
+  if (value instanceof Date) return sane(value);
+  if (typeof value === "number") return fromUnix(value);
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (/^\d+(\.\d+)?$/.test(text)) return fromUnix(Number(text));
+  return sane(new Date(text));
+}
+
+function fromUnix(value: number) {
+  if (!Number.isFinite(value) || value < 1_000_000_000) return null;
+  return sane(new Date(value > 10_000_000_000 ? value : value * 1000));
+}
+
+function sane(date: Date) {
+  const time = date.getTime();
+  if (Number.isNaN(time)) return null;
+  const year = date.getUTCFullYear();
+  if (year < 2024 || year > 2035) return null;
+  return date;
 }
 
 export function mapLabel(raw: string) {
