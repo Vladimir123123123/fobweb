@@ -4,13 +4,20 @@ import Base from "../layouts/Base.astro";
 <Base title="Квесты — WARDOGS СНГ" description="Квесты сервера FOB. После входа через Steam убийства на сервере приносят опыт и очки сообщества.">
   <p class="eyebrow">Сообщество</p>
   <h1>Квесты</h1>
-  <p class="lead">Запусти квест и выполняй его на сервере FOB. Опыт поднимает уровень сообщества до 600. Очки потом можно будет потратить на VIP. Это не цифры карьеры в игре.</p>
+  <p class="lead">Запусти квест и выполняй его на сервере FOB. Опыт поднимает уровень сообщества до 600. Очки с квестов и с сида тратятся в магазине ниже. Это не цифры карьеры в игре.</p>
   <section id="quest-rank" class="quest-rank"></section>
+  <h2>Магазин</h2>
+  <p class="note" id="shop-rule"></p>
+  <p id="shop-note" class="note"></p>
+  <section id="shop-list" class="shop-list"></section>
   <section id="quest-list" class="quest-list"></section>
 </Base>
 <script>
   const rank = document.querySelector<HTMLElement>("#quest-rank")!;
   const list = document.querySelector<HTMLElement>("#quest-list")!;
+  const shop = document.querySelector<HTMLElement>("#shop-list")!;
+  const shopRule = document.querySelector<HTMLElement>("#shop-rule")!;
+  const shopNote = document.querySelector<HTMLElement>("#shop-note")!;
   const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
   const diff: Record<string, string> = { easy: "Легкая", mid: "Средняя", hard: "Сложная" };
   const repeat: Record<string, string> = { once: "Один раз", weekly: "Еженедельно", monthly: "Ежемесячно" };
@@ -35,7 +42,7 @@ import Base from "../layouts/Base.astro";
     const width = data.maxed ? 100 : Math.max(0, Math.min(100, Math.round((into / need) * 100)));
     rank.innerHTML = data.signedIn
       ? `<p class="eyebrow">Уровень сообщества</p><div class="quest-score"><b>${level}</b><span>из 600</span><b>${data.coins || 0}</b><span>очков</span></div><div class="rank-bar" aria-hidden="true"><span style="width:${width}%"></span></div><p class="note">${data.maxed ? "Потолок уровня." : `До следующего уровня ${need - into} опыта.`} 50 опыта — один уровень.</p>`
-      : `<p>Чтобы взять квест, войди через Steam.</p><a class="btn" href="/auth/steam?next=/quests">Войти через Steam</a>`;
+      : `<p>Чтобы взять квест и потратить очки, войди через Steam.</p><a class="btn" href="/auth/steam?next=/quests">Войти через Steam</a>`;
     const quests = data.quests ?? [];
     list.innerHTML = quests.map((quest) => {
       const done = quest.state === "done";
@@ -68,6 +75,59 @@ import Base from "../layouts/Base.astro";
     }
     paint(await response.json());
   };
+  type Product = { id: number; title: string; body: string; price: number; kind: string; days: number };
+  const paintShop = (data: { signedIn?: boolean; products?: Product[]; seedCoins?: number; seedCap?: number; seedBelow?: number; seedToday?: number }) => {
+    const perMinute = Number(data.seedCoins) || 0;
+    const cap = Number(data.seedCap) || 0;
+    const below = Number(data.seedBelow) || 20;
+    const word = (count: number) => {
+      const mod = count % 10;
+      const teen = count % 100;
+      if (mod === 1 && teen !== 11) return "очко";
+      if (mod >= 2 && mod <= 4 && (teen < 12 || teen > 14)) return "очка";
+      return "очков";
+    };
+    shopRule.textContent = perMinute
+      ? `Пока на сервере меньше ${below} человек, минута в игре даёт ${perMinute} ${word(perMinute)}. В день не больше ${cap}. Месяц такого сида не закрывает VIP целиком, остальное добирают квесты, поэтому оплата в тикете Discord быстрее.`
+      : "Сид сейчас не начисляет очки.";
+    if (data.signedIn) shopRule.textContent += ` Сегодня с сида: ${Number(data.seedToday) || 0} из ${cap}.`;
+    const products = data.products ?? [];
+    shop.innerHTML = products.map((product) => `<article class="shop-item"><div><h2>${esc(product.title)}</h2><p>${esc(product.body)}</p></div><p><b>${product.price} очков</b>${product.days ? `<br>${product.days} дней` : ""}</p><div>${data.signedIn ? `<button class="btn small" data-buy="${product.id}" data-kind="${esc(product.kind)}" type="button">Купить</button>` : `<a class="btn small" href="/auth/steam?next=/quests">Войти и купить</a>`}</div></article>`).join("") || "<p>В магазине пока пусто.</p>";
+  };
+  const loadShop = async () => {
+    const response = await fetch("/api/shop");
+    if (!response.ok) {
+      shop.innerHTML = "<p>Магазин сейчас не открывается.</p>";
+      return;
+    }
+    paintShop(await response.json());
+  };
+  const shopErrors: Record<string, string> = {
+    discord: "Привяжи Discord в своём профиле, чтобы роль Спонсор нашлась.",
+    poor: "Не хватает очков.",
+    closed: "Этого товара уже нет.",
+  };
+  shop.addEventListener("click", async (event) => {
+    const button = (event.target as Element).closest<HTMLButtonElement>("[data-buy]");
+    if (!button) return;
+    button.disabled = true;
+    shopNote.textContent = "";
+    const response = await fetch(`/api/shop/${button.dataset.buy}`, { method: "POST" });
+    if (response.status === 401) {
+      location.href = "/auth/steam?next=/quests";
+      return;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      shopNote.textContent = shopErrors[String(body.error)] || "Покупка не прошла.";
+      button.disabled = false;
+      return;
+    }
+    const kind = button.dataset.kind || "";
+    paintShop(await response.json());
+    shopNote.textContent = kind === "note" ? "Покупка записана." : "Покупка прошла. Роль Спонсор появится в Discord в течение минуты.";
+    load();
+  });
   list.addEventListener("click", async (event) => {
     const button = (event.target as Element).closest<HTMLButtonElement>("[data-start]");
     if (!button) return;
@@ -81,4 +141,5 @@ import Base from "../layouts/Base.astro";
     else button.disabled = false;
   });
   load();
+  loadShop();
 </script>

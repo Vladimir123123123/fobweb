@@ -49,6 +49,7 @@ export function getStaticPaths() {
         <button type="button" data-desk="squads">Сквады${queue ? ` ${queue}` : ""}</button>
         <button type="button" data-desk="builds">Сборки</button>
         <button type="button" data-desk="quests">Квесты</button>
+        <button type="button" data-desk="shop">Магазин</button>
         <button type="button" data-desk="access">Доступ</button>
       </nav>
       <section class="desk" data-desk="home">
@@ -151,6 +152,38 @@ export function getStaticPaths() {
         </form>
         <div class="quest-table" id="quest-admin"></div>
       </section>
+      <section class="desk" data-desk="shop" hidden>
+        <h2>Магазин</h2>
+        <p class="note">Очки берутся из квестов и из сида: игрок на сервере, пока онлайн ниже порога. Минута даёт очки, день ограничен, чтобы простой сид не обгонял оплату. VIP за 300 ₽ и клановый за 200 ₽ в тикете Discord остаются быстрее. Роль Спонсор выдаёт бот, если у игрока привязан Discord.</p>
+        <form id="shop-settings" class="guide-form">
+          <div class="desk-split">
+            <label>Очков за минуту сида<input id="seed-coins" type="number" min="0" max="100" required></label>
+            <label>Потолок в день<input id="seed-cap" type="number" min="0" max="100000" required></label>
+          </div>
+          <label>Сид, пока на сервере меньше<input id="seed-below" type="number" min="1" max="200" required></label>
+          <button class="btn" type="submit">Сохранить сид</button>
+          <p id="shop-settings-note" class="note"></p>
+        </form>
+        <h2>Товар</h2>
+        <form id="shop-form" class="guide-form">
+          <label>Название<input id="shop-title" maxlength="80" required></label>
+          <label>Текст<textarea id="shop-body" maxlength="300"></textarea></label>
+          <div class="desk-split">
+            <label>Цена, очки<input id="shop-price" type="number" min="1" max="1000000" required></label>
+            <label>Дней роли<input id="shop-days" type="number" min="0" max="366" value="30"></label>
+          </div>
+          <label>Что выдаёт<select id="shop-kind"><option value="vip">VIP, роль Спонсор</option><option value="clanvip">Клановый VIP, роль Спонсор</option><option value="note">Просто записать покупку</option></select></label>
+          <label class="check"><input id="shop-hidden" type="checkbox"> Скрыть с сайта</label>
+          <div class="row">
+            <button class="btn" type="submit">Сохранить товар</button>
+            <button class="btn ghost" id="shop-cancel" type="button" hidden>Отмена</button>
+          </div>
+          <p id="shop-form-note" class="note"></p>
+        </form>
+        <div class="quest-table" id="shop-admin"></div>
+        <h2>Последние покупки</h2>
+        <div class="desk-list" id="shop-orders"></div>
+      </section>
       <section class="desk" data-desk="access" hidden>
         <h2>Топ сезона ${esc(String(data.season ?? ""))}</h2>
         <p class="note">В этом сезоне снимков: ${data.seasonPlayers ?? 0}. Кнопка стирает только текущий сезон. Сезон 2 остаётся.</p>
@@ -166,6 +199,7 @@ export function getStaticPaths() {
       for (const node of desks) node.hidden = node.dataset.desk !== name;
       gate.querySelectorAll<HTMLButtonElement>("#desk-nav button").forEach((button) => button.classList.toggle("on", button.dataset.desk === name));
       if (name === "quests") loadQuests();
+      if (name === "shop") loadShop();
     };
     gate.querySelector("#desk-nav")?.addEventListener("click", (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>("button");
@@ -454,5 +488,101 @@ export function getStaticPaths() {
       saveQuestForm("live");
     });
     gate.querySelector("#quest-draft")?.addEventListener("click", () => saveQuestForm("draft"));
+    type ShopProduct = { id: number; title: string; body: string; price: number; kind: string; days: number; hidden: boolean };
+    let shopEditing = 0;
+    let shopRows: ShopProduct[] = [];
+    const kindName: Record<string, string> = { vip: "VIP", clanvip: "Клановый VIP", note: "Запись" };
+    const shopForm = gate.querySelector<HTMLFormElement>("#shop-form");
+    const loadShop = async () => {
+      const board = await fetch("/api/admin/shop").then((response) => response.ok ? response.json() : null);
+      if (!board) return;
+      const coins = gate.querySelector<HTMLInputElement>("#seed-coins");
+      const cap = gate.querySelector<HTMLInputElement>("#seed-cap");
+      const below = gate.querySelector<HTMLInputElement>("#seed-below");
+      if (coins) coins.value = String(board.seedCoins ?? 1);
+      if (cap) cap.value = String(board.seedCap ?? 60);
+      if (below) below.value = String(board.seedBelow ?? 20);
+      shopRows = board.products ?? [];
+      const list = gate.querySelector("#shop-admin");
+      if (list) {
+        list.innerHTML = shopRows.map((item) => `<article class="quest-line"><div><b>${esc(item.title)}</b><p>${esc(item.body)}</p></div><p>${item.price} очков<br>${item.days || 0} дней</p><p><span class="pill">${kindName[item.kind] || "VIP"}</span>${item.hidden ? ` <span class="pill">Скрыт</span>` : ""}</p><p><button class="btn ghost small" data-shop-edit="${item.id}" type="button">Изменить</button> <button class="btn ghost small" data-shop-delete="${item.id}" type="button">Удалить</button></p></article>`).join("") || "<p>Товаров нет.</p>";
+      }
+      const orders = gate.querySelector("#shop-orders");
+      if (orders) {
+        orders.innerHTML = (board.orders ?? []).map((item: { name: string; title: string; price: number; days: number }) => `<div class="desk-row"><p class="grow">${esc(item.name)} · ${esc(item.title)} · ${item.price} очков${item.days ? ` · ${item.days} дней` : ""}</p></div>`).join("") || "<p>Покупок ещё нет.</p>";
+      }
+    };
+    gate.querySelector("#shop-settings")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const note = gate.querySelector("#shop-settings-note");
+      const response = await fetch("/api/admin/shop", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          seedCoins: Number((gate.querySelector<HTMLInputElement>("#seed-coins"))?.value),
+          seedCap: Number((gate.querySelector<HTMLInputElement>("#seed-cap"))?.value),
+          seedBelow: Number((gate.querySelector<HTMLInputElement>("#seed-below"))?.value),
+        }),
+      });
+      if (note) note.textContent = response.ok ? "Сид сохранён." : "Проверь числа.";
+      if (response.ok) loadShop();
+    });
+    shopForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const note = gate.querySelector("#shop-form-note");
+      const payload = {
+        title: (gate.querySelector<HTMLInputElement>("#shop-title"))?.value ?? "",
+        body: (gate.querySelector<HTMLTextAreaElement>("#shop-body"))?.value ?? "",
+        price: Number((gate.querySelector<HTMLInputElement>("#shop-price"))?.value),
+        days: Number((gate.querySelector<HTMLInputElement>("#shop-days"))?.value),
+        kind: (gate.querySelector<HTMLSelectElement>("#shop-kind"))?.value ?? "vip",
+        hidden: Boolean(gate.querySelector<HTMLInputElement>("#shop-hidden")?.checked),
+      };
+      const response = await fetch(shopEditing ? `/api/admin/shop/${shopEditing}` : "/api/admin/shop", {
+        method: shopEditing ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        if (note) note.textContent = "Проверь название и цену. Для VIP нужны дни.";
+        return;
+      }
+      shopEditing = 0;
+      shopForm.reset();
+      gate.querySelector<HTMLButtonElement>("#shop-cancel")?.setAttribute("hidden", "");
+      if (note) note.textContent = "Товар сохранён.";
+      loadShop();
+    });
+    gate.querySelector("#shop-cancel")?.addEventListener("click", () => {
+      shopEditing = 0;
+      shopForm?.reset();
+      gate.querySelector<HTMLButtonElement>("#shop-cancel")?.setAttribute("hidden", "");
+    });
+    gate.querySelector("#shop-admin")?.addEventListener("click", async (event) => {
+      const edit = (event.target as Element).closest<HTMLButtonElement>("[data-shop-edit]");
+      const remove = (event.target as Element).closest<HTMLButtonElement>("[data-shop-delete]");
+      if (edit) {
+        const found = shopRows.find((item) => item.id === Number(edit.dataset.shopEdit));
+        if (!found || !shopForm) return;
+        shopEditing = found.id;
+        const title = gate.querySelector<HTMLInputElement>("#shop-title");
+        const body = gate.querySelector<HTMLTextAreaElement>("#shop-body");
+        const price = gate.querySelector<HTMLInputElement>("#shop-price");
+        const days = gate.querySelector<HTMLInputElement>("#shop-days");
+        const kind = gate.querySelector<HTMLSelectElement>("#shop-kind");
+        const hidden = gate.querySelector<HTMLInputElement>("#shop-hidden");
+        if (title) title.value = found.title;
+        if (body) body.value = found.body;
+        if (price) price.value = String(found.price);
+        if (days) days.value = String(found.days);
+        if (kind) kind.value = found.kind;
+        if (hidden) hidden.checked = found.hidden;
+        gate.querySelector<HTMLButtonElement>("#shop-cancel")?.removeAttribute("hidden");
+      }
+      if (remove) {
+        await fetch(`/api/admin/shop/${remove.dataset.shopDelete}`, { method: "DELETE" });
+        loadShop();
+      }
+    });
   }
 </script>

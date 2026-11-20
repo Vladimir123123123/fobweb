@@ -15,6 +15,7 @@ import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./serv
 import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
 import { adminQuestBoard, insertQuest, publicQuests, questInput, removeQuest, saveQuest, startQuest } from "./quests.js";
+import { adminShop, buyProduct, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 function trackerRequest(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) {
@@ -1899,6 +1900,66 @@ app.delete("/api/admin/quests/:id", async (request, reply) => {
   return { ok: true };
 });
 
+app.get("/api/shop", async (request) => publicShop(steamIdOf(request)));
+
+app.post("/api/shop/:id", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  if (!steamId) return reply.code(401).send({ error: "steam" });
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1) return notFound(reply);
+  const result = await buyProduct(steamId, id);
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return publicShop(steamId);
+});
+
+app.get("/api/admin/shop", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  return adminShop();
+});
+
+app.patch("/api/admin/shop", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const input = settingsInput(asObject(request.body));
+  if (!input) return reply.code(400).send({ error: "bad_request" });
+  await saveSettings(input);
+  return adminShop();
+});
+
+app.post("/api/admin/shop", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const input = productInput(asObject(request.body));
+  if (!input) return reply.code(400).send({ error: "bad_request" });
+  return { ok: true, id: await insertProduct(input) };
+});
+
+app.patch("/api/admin/shop/:id", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  const input = productInput(asObject(request.body));
+  if (!Number.isInteger(id) || id < 1 || !input) return reply.code(400).send({ error: "bad_request" });
+  if (!(await saveProduct(id, input))) return notFound(reply);
+  return { ok: true };
+});
+
+app.delete("/api/admin/shop/:id", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1 || !(await removeProduct(id))) return notFound(reply);
+  return { ok: true };
+});
+
+app.get("/api/bot/shop-grants", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return { grants: await pendingGrants() };
+});
+
+app.post("/api/bot/shop-grants/ack", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const id = Number(asObject(request.body)?.id);
+  if (!Number.isInteger(id) || id < 1 || !(await finishGrant(id))) return notFound(reply);
+  return { ok: true };
+});
+
 app.get("/api/admin/session", async (request, reply) => {
   const steamId = steamIdOf(request);
   if (!(await isAdmin(steamId))) return notFound(reply);
@@ -2203,6 +2264,7 @@ setInterval(() => {
 
 await migrate();
 await seedGuides();
+await ensureShop();
 dumpDatabase().catch((error) => app.log.error(error));
 setInterval(() => {
   dumpDatabase().catch((error) => app.log.error(error));

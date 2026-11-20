@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import { sql } from "./db.js";
+import { creditSeed } from "./shop.js";
 import { recentKills } from "./kill-feed.js";
 import { rememberRoster } from "./roster-cache.js";
 import { steamProfile, wardogsHours } from "./steam.js";
@@ -150,6 +151,7 @@ export async function notePresence(steamIds: string[], kills = new Map<string, n
         last_seen = now()
     `;
   }
+  await creditSeed(steamIds, steamIds.length);
 }
 
 export type DayCell = { place: number; minutes: number; kills: number };

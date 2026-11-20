@@ -347,3 +347,53 @@ CREATE TABLE IF NOT EXISTS quest_runs (
   done_at datetime(3) NULL,
   UNIQUE KEY quest_run (quest_id, steam_id, period_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS shop_settings (
+  id tinyint NOT NULL PRIMARY KEY,
+  seed_coins int NOT NULL DEFAULT 1,
+  seed_cap int NOT NULL DEFAULT 60,
+  seed_below int NOT NULL DEFAULT 20
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS shop_products (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title varchar(80) NOT NULL,
+  body varchar(300) NOT NULL DEFAULT '',
+  price int NOT NULL,
+  kind varchar(16) NOT NULL,
+  days int NOT NULL DEFAULT 0,
+  hidden tinyint(1) NOT NULL DEFAULT 0,
+  sort_order int NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS shop_orders (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  steam_id varchar(20) NOT NULL,
+  product_id bigint NOT NULL,
+  title varchar(80) NOT NULL,
+  price int NOT NULL,
+  kind varchar(16) NOT NULL,
+  days int NOT NULL DEFAULT 0,
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS shop_grants (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  order_id bigint NOT NULL,
+  steam_id varchar(20) NOT NULL,
+  discord_id varchar(32) NOT NULL,
+  kind varchar(16) NOT NULL,
+  days int NOT NULL,
+  status varchar(12) NOT NULL DEFAULT 'pending',
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS seed_days (
+  steam_id varchar(20) NOT NULL,
+  day date NOT NULL,
+  seconds int NOT NULL DEFAULT 0,
+  paid_seconds int NOT NULL DEFAULT 0,
+  coins int NOT NULL DEFAULT 0,
+  last_seen datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (steam_id, day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
