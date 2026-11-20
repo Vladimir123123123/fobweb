@@ -156,6 +156,11 @@ export async function acceptFeed(body: unknown) {
   while (recent.length > 40) recent.pop();
   while (seen.size > 400) seen.clear();
   await absorbFeed(body);
+  const killers = rows.filter((row) => !row.suicide && /^\d{17}$/.test(row.killerSteam)).map((row) => row.killerSteam);
+  if (killers.length) {
+    const { touchQuests } = await import("./quests.js");
+    await touchQuests(killers);
+  }
   return rows.length;
 }
 

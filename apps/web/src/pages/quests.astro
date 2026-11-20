@@ -4,7 +4,7 @@ import Base from "../layouts/Base.astro";
 <Base title="Квесты — WARDOGS СНГ" description="Квесты сервера FOB. После входа через Steam убийства на сервере приносят опыт и очки сообщества.">
   <p class="eyebrow">Сообщество</p>
   <h1>Квесты</h1>
-  <p class="lead">Запусти квест и выполняй его на сервере FOB. Опыт поднимает уровень сообщества до 600. Очки за квест приходят вам и, если вы в составе сквада, столько же в казну сквада. Очки с сида и за кнопку «Обновить статистику» остаются только вашими. Личный VIP покупается ниже. Клановый слот дороже: его берёт лидер или заместитель из казны и сам выбирает, кому выдать.</p>
+  <p class="lead">Запусти квест и выполняй его на сервере FOB. Когда убийства собраны, на карточке появляется кнопка «Забрать награду»: опыт и очки приходят после неё. Очки за квест приходят вам и, если вы в составе сквада, столько же в казну сквада. Очки с сида и за кнопку «Обновить статистику» остаются только вашими. Личный VIP покупается ниже. Клановый слот дороже: его берёт лидер или заместитель из казны и сам выбирает, кому выдать.</p>
   <section id="quest-rank" class="quest-rank"></section>
   <h2>Магазин</h2>
   <p class="note" id="shop-rule"></p>
@@ -46,15 +46,18 @@ import Base from "../layouts/Base.astro";
     const quests = data.quests ?? [];
     list.innerHTML = quests.map((quest) => {
       const done = quest.state === "done";
-      const active = quest.state === "active";
+      const ready = quest.state === "ready";
+      const active = quest.state === "active" || ready;
       const width = Math.max(0, Math.min(100, Math.round((quest.progress / Math.max(quest.kills, 1)) * 100)));
       const action = done
-        ? `<span class="pill now">Завершено</span>`
-        : active
-          ? `<span class="pill">${quest.progress} / ${quest.kills}</span>`
-          : data.signedIn
-            ? `<button class="btn small" data-start="${quest.id}" type="button">Начать</button>`
-            : "";
+        ? `<span class="pill now">Награда получена</span>`
+        : ready
+          ? `<button class="btn small" data-claim="${quest.id}" type="button">Забрать награду</button>`
+          : active
+            ? `<span class="pill">${quest.progress} / ${quest.kills}</span>`
+            : data.signedIn
+              ? `<button class="btn small" data-start="${quest.id}" type="button">Начать</button>`
+              : "";
       return `<article class="quest">
         <div>
           <h2>${esc(quest.title)}</h2>
@@ -131,17 +134,30 @@ import Base from "../layouts/Base.astro";
     shopNote.textContent = kind === "note" ? "Покупка записана." : "Покупка прошла. Роль Спонсор появится в Discord в течение минуты.";
     load();
   });
+  const questErrors: Record<string, string> = {
+    wait: "Квест ещё не выполнен.",
+    done: "Награда по этому квесту уже получена.",
+    ready: "Квест уже выполнен. Нажми «Забрать награду».",
+    closed: "Этот квест уже закрыт.",
+  };
   list.addEventListener("click", async (event) => {
-    const button = (event.target as Element).closest<HTMLButtonElement>("[data-start]");
+    const claim = (event.target as Element).closest<HTMLButtonElement>("[data-claim]");
+    const button = claim ?? (event.target as Element).closest<HTMLButtonElement>("[data-start]");
     if (!button) return;
     button.disabled = true;
-    const response = await fetch(`/api/quests/${button.dataset.start}/start`, { method: "POST" });
+    const id = button.dataset.claim || button.dataset.start;
+    const path = button.dataset.claim ? "claim" : "start";
+    const response = await fetch(`/api/quests/${id}/${path}`, { method: "POST" });
     if (response.status === 401) {
       location.href = "/auth/steam?next=/quests";
       return;
     }
     if (response.ok) paint(await response.json());
-    else button.disabled = false;
+    else {
+      const body = await response.json().catch(() => ({}));
+      button.disabled = false;
+      button.insertAdjacentHTML("afterend", `<p class="note">${esc(questErrors[String(body.error)] || "Не вышло.")}</p>`);
+    }
   });
   load();
   loadShop();

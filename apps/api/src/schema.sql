@@ -345,6 +345,7 @@ CREATE TABLE IF NOT EXISTS quest_runs (
   period_key varchar(16) NOT NULL,
   started_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
   status varchar(8) NOT NULL DEFAULT 'active',
+  announced tinyint NOT NULL DEFAULT 0,
   done_at datetime(3) NULL,
   UNIQUE KEY quest_run (quest_id, steam_id, period_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

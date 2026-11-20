@@ -14,7 +14,7 @@ import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
-import { adminQuestBoard, insertQuest, publicQuests, questInput, removeQuest, saveQuest, startQuest } from "./quests.js";
+import { ackQuestAlerts, adminQuestBoard, botQuestBoard, claimQuest, insertQuest, pendingQuestAlerts, publicQuests, questInput, removeQuest, saveQuest, startQuest, startQuestByDiscord } from "./quests.js";
 import { adminShop, buyProduct, creditStatRefresh, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
 import { assignClanSlot, buyClanSlot, clanView, clearClanSlot, disbandSquad, finishRevoke, officerOf, pendingRevokes, removeMember, setDeputy } from "./clan.js";
 import { weekBoard } from "./week.js";
@@ -1952,6 +1952,43 @@ app.post("/api/quests/:id/start", async (request, reply) => {
   const result = await startQuest(steamId, id);
   if (result.error) return reply.code(409).send({ error: result.error });
   return publicQuests(steamId);
+});
+
+app.post("/api/quests/:id/claim", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  if (!steamId) return reply.code(401).send({ error: "steam" });
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1) return notFound(reply);
+  const result = await claimQuest(steamId, id);
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return publicQuests(steamId);
+});
+
+app.get("/api/bot/quests", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return botQuestBoard();
+});
+
+app.post("/api/bot/quests/:id/start", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  const discordId = text(asObject(request.body)?.discordId, 24);
+  if (!Number.isInteger(id) || id < 1 || !/^\d{8,20}$/.test(discordId)) return reply.code(400).send({ error: "bad_request" });
+  const result = await startQuestByDiscord(discordId, id);
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return { ok: true };
+});
+
+app.get("/api/bot/quest-alerts", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return pendingQuestAlerts();
+});
+
+app.post("/api/bot/quest-alerts/ack", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const raw = asObject(request.body)?.ids;
+  const ids = Array.isArray(raw) ? raw.map((item) => Number(item)) : [];
+  return ackQuestAlerts(ids);
 });
 
 app.get("/api/admin/quests", async (request, reply) => {

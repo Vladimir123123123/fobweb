@@ -238,7 +238,7 @@ async function award(runId: number, steamId: string, xp: number, coins: number) 
   return sql.begin(async (tx) => {
     const updated = await tx<{ affected?: number }[]>`
       UPDATE quest_runs SET status = 'done', done_at = NOW()
-      WHERE id = ${runId} AND status = 'active'
+      WHERE id = ${runId} AND status = 'ready'
     `;
     if (!updated[0]?.affected) return false;
     await tx`
@@ -267,7 +267,12 @@ async function settle(steamId: string) {
       maxMeters: Number(run.max_meters) || 0,
       weapon: String(run.weapon || ""),
     });
-    if (count >= Number(run.kills)) await award(Number(run.id), steamId, Number(run.xp) || 0, Number(run.coins) || 0);
+    if (count >= Number(run.kills)) {
+      await sql`
+        UPDATE quest_runs SET status = 'ready'
+        WHERE id = ${Number(run.id)} AND status = 'active'
+      `;
+    }
   }
 }
 
@@ -287,8 +292,8 @@ function card(row: QuestRow, run: RunRow | undefined, progress: number) {
     weapon: row.weapon || "",
     startsAt: row.starts_at,
     endsAt: row.ends_at,
-    state: run?.status === "done" ? "done" : run ? "active" : "open",
-    progress: run?.status === "done" ? Number(row.kills) : progress,
+    state: run?.status === "done" ? "done" : run?.status === "ready" ? "ready" : run ? "active" : "open",
+    progress: run?.status === "done" || run?.status === "ready" ? Number(row.kills) : progress,
   };
 }
 
@@ -344,6 +349,7 @@ export async function startQuest(steamId: string, questId: number) {
     WHERE quest_id = ${questId} AND steam_id = ${steamId} AND period_key = ${key}
   `;
   if (existing[0]?.status === "done") return { error: "done" as const };
+  if (existing[0]?.status === "ready") return { error: "ready" as const };
   if (!existing[0]) {
     await sql`
       INSERT INTO quest_runs (quest_id, steam_id, period_key, status)
@@ -351,6 +357,91 @@ export async function startQuest(steamId: string, questId: number) {
     `;
   }
   return { error: "" as const };
+}
+
+export async function claimQuest(steamId: string, questId: number) {
+  const keyRows = await sql<QuestRow[]>`
+    SELECT id, title, body, kills, difficulty, repeat_kind, xp, coins, min_meters, max_meters, headshot, weapon, status, starts_at, ends_at
+    FROM quests WHERE id = ${questId}
+  `;
+  const quest = keyRows[0];
+  if (!quest) return { error: "closed" as const };
+  const key = periodKey(quest.repeat_kind);
+  const runs = await sql<RunRow[]>`
+    SELECT id, quest_id, status, started_at, period_key
+    FROM quest_runs
+    WHERE quest_id = ${questId} AND steam_id = ${steamId} AND period_key = ${key}
+  `;
+  const run = runs[0];
+  if (!run) return { error: "wait" as const };
+  if (run.status === "done") return { error: "done" as const };
+  if (run.status !== "ready") return { error: "wait" as const };
+  const paid = await award(Number(run.id), steamId, Number(quest.xp) || 0, Number(quest.coins) || 0);
+  if (!paid) return { error: "done" as const };
+  return { error: "" as const };
+}
+
+export async function touchQuests(steamIds: string[]) {
+  for (const steamId of [...new Set(steamIds)].slice(0, 40)) {
+    if (/^\d{17}$/.test(steamId)) await settle(steamId);
+  }
+}
+
+export async function startQuestByDiscord(discordId: string, questId: number) {
+  const linked = await sql<Array<{ steam_id: string }>>`
+    SELECT steam_id FROM users WHERE discord_id = ${discordId} LIMIT 1
+  `;
+  const steamId = String(linked[0]?.steam_id || "");
+  if (!/^\d{17}$/.test(steamId)) return { error: "link" as const };
+  return startQuest(steamId, questId);
+}
+
+export async function botQuestBoard() {
+  const quests = await sql<QuestRow[]>`
+    SELECT id, title, body, kills, difficulty, repeat_kind, xp, coins, min_meters, max_meters, headshot, weapon, status, starts_at, ends_at
+    FROM quests
+    WHERE status = 'live'
+      AND (starts_at IS NULL OR starts_at <= NOW())
+      AND (ends_at IS NULL OR ends_at > NOW())
+    ORDER BY id
+  `;
+  return {
+    quests: quests.map((row) => ({
+      id: Number(row.id),
+      title: row.title,
+      body: row.body,
+      kills: Number(row.kills),
+      xp: Number(row.xp),
+      coins: Number(row.coins),
+    })),
+  };
+}
+
+export async function pendingQuestAlerts() {
+  const rows = await sql<Array<{ id: number; title: string; name: string }>>`
+    SELECT r.id, q.title, COALESCE(NULLIF(u.persona, ''), r.steam_id) AS name
+    FROM quest_runs r
+    JOIN quests q ON q.id = r.quest_id
+    LEFT JOIN users u ON u.steam_id = r.steam_id
+    WHERE r.status = 'ready' AND r.announced = 0
+    ORDER BY r.id
+    LIMIT 10
+  `;
+  return {
+    alerts: rows.map((row) => ({
+      id: Number(row.id),
+      title: String(row.title || "").slice(0, 80),
+      name: String(row.name || "").slice(0, 40),
+    })),
+  };
+}
+
+export async function ackQuestAlerts(ids: number[]) {
+  const clean = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))].slice(0, 20);
+  for (const id of clean) {
+    await sql`UPDATE quest_runs SET announced = 1 WHERE id = ${id} AND status = 'ready'`;
+  }
+  return { ok: true };
 }
 
 export async function adminQuestBoard() {
