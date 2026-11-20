@@ -24,7 +24,7 @@ import Base from "../layouts/Base.astro";
       </label>
     </div>
     <label>Описание
-      <textarea id="about" maxlength="700" placeholder="Чем занимается сквад" required></textarea>
+      <textarea id="about" maxlength="700" placeholder="Чем занимается сквад. Адрес сайта станет ссылкой" required></textarea>
     </label>
     <label>Критерии набора
       <textarea id="criteria" maxlength="700" placeholder="Часы, роли, возраст, язык" required></textarea>
@@ -121,7 +121,7 @@ import Base from "../layouts/Base.astro";
               <label>Название<input id="profile-name" maxlength="32" value="${esc(owned.name)}" /></label>
               <label>Тег<input id="profile-tag" maxlength="5" value="${esc(owned.tag)}" /></label>
             </div>
-            <label>Описание<textarea id="profile-about" maxlength="700">${esc(owned.about ?? "")}</textarea></label>
+            <label>Описание<textarea id="profile-about" maxlength="700" placeholder="Адрес сайта в тексте станет ссылкой">${esc(owned.about ?? "")}</textarea></label>
             <label>Критерии набора<textarea id="profile-criteria" maxlength="700">${esc(owned.criteria ?? "")}</textarea></label>
             <label>Discord<input id="profile-discord" placeholder="https://discord.gg/..." value="${esc(owned.discord_url)}" /></label>
             <label class="check"><input id="profile-closed" type="checkbox" ${owned.closed ? "checked" : ""}/> Набор закрыт</label>

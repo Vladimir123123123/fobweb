@@ -8,6 +8,31 @@ import Base from "../layouts/Base.astro";
   const root = document.querySelector("#squad-page")!;
   const id = new URLSearchParams(location.search).get("id") ?? "";
   const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  const linkify = (value: string) => {
+    const pattern = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:ru|su|com|net|org|gg|io|me|tv|app|dev)(?:\/[^\s]*)?/gi;
+    let html = "";
+    let last = 0;
+    for (const match of value.matchAll(pattern)) {
+      const index = match.index ?? 0;
+      html += esc(value.slice(last, index));
+      const raw = match[0];
+      const trimmed = raw.replace(/[.,!?;:)]+$/g, "");
+      const tail = raw.slice(trimmed.length);
+      const href = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      let open = false;
+      try {
+        const url = new URL(href);
+        open = url.protocol === "http:" || url.protocol === "https:";
+      } catch {
+        open = false;
+      }
+      html += open
+        ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(trimmed)}</a>${esc(tail)}`
+        : esc(raw);
+      last = index + raw.length;
+    }
+    return html + esc(value.slice(last));
+  };
   if (!/^\d+$/.test(id)) {
     root.innerHTML = "<h1>Такой страницы нет</h1>";
   } else {
@@ -114,11 +139,11 @@ import Base from "../layouts/Base.astro";
           <section class="hall-split">
             <div>
               <p class="eyebrow">Описание</p>
-              <p class="hall-copy">${esc(squad.about || "Сквад ещё не заполнил описание.")}</p>
+              <p class="hall-copy">${squad.about ? linkify(squad.about) : "Сквад ещё не заполнил описание."}</p>
             </div>
             <div>
               <p class="eyebrow">Критерии набора</p>
-              <p class="hall-copy">${esc(squad.criteria || "Критерии не указаны.")}</p>
+              <p class="hall-copy">${squad.criteria ? linkify(squad.criteria) : "Критерии не указаны."}</p>
             </div>
           </section>
           <div class="hall-actions">

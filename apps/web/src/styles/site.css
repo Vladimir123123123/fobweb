@@ -855,6 +855,7 @@ label.check input { width: auto; }
 .hall-split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 0 18px 8px; }
 .hall-split .eyebrow { margin-bottom: 6px; }
 .hall-copy { margin: 0; white-space: pre-wrap; color: var(--muted); }
+.hall-copy a { color: #efaa18; text-underline-offset: 2px; }
 .hall-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 18px 18px; }
 .hall-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 22px; }
 .hall-head h2 { margin: 0; }
