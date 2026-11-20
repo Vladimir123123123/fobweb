@@ -4,6 +4,7 @@ export type ShopSettings = { seedCoins: number; seedCap: number; seedBelow: numb
 export type ProductInput = { title: string; body: string; price: number; kind: "vip" | "clanvip" | "note"; days: number; hidden: boolean };
 
 const DEFAULTS: ShopSettings = { seedCoins: 1, seedCap: 60, seedBelow: 20 };
+export const STAT_REFRESH_COINS = 10;
 
 function moscowDay(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
@@ -90,6 +91,23 @@ export function settingsInput(body: Record<string, unknown> | null): ShopSetting
   return { seedCoins, seedCap, seedBelow };
 }
 
+export async function creditStatRefresh(steamId: string) {
+  if (!/^\d{17}$/.test(steamId)) return 0;
+  const day = moscowDay();
+  return sql.begin(async (tx) => {
+    const inserted = await tx`
+      INSERT IGNORE INTO stat_days (steam_id, day, coins)
+      VALUES (${steamId}, ${day}, ${STAT_REFRESH_COINS})
+    `;
+    if (!inserted.length) return 0;
+    await tx`
+      INSERT INTO community (steam_id, xp, coins) VALUES (${steamId}, 0, ${STAT_REFRESH_COINS})
+      ON DUPLICATE KEY UPDATE coins = coins + ${STAT_REFRESH_COINS}
+    `;
+    return STAT_REFRESH_COINS;
+  });
+}
+
 export async function creditSeed(steamIds: string[], online: number) {
   const settings = await readSettings();
   if (online < 1 || online >= settings.seedBelow || settings.seedCoins < 1 || settings.seedCap < 1) return;
@@ -138,13 +156,21 @@ function card(row: ProductRow) {
 }
 
 async function wallet(steamId: string | null) {
-  if (!steamId) return { coins: 0, seedToday: 0 };
+  if (!steamId) return { coins: 0, seedToday: 0, statToday: false };
   const settings = await readSettings();
   const money = await sql<Array<{ coins: number }>>`SELECT coins FROM community WHERE steam_id = ${steamId}`;
+  const day = moscowDay();
   const seed = await sql<Array<{ coins: number }>>`
-    SELECT coins FROM seed_days WHERE steam_id = ${steamId} AND day = ${moscowDay()}
+    SELECT coins FROM seed_days WHERE steam_id = ${steamId} AND day = ${day}
   `;
-  return { coins: Number(money[0]?.coins) || 0, seedToday: Math.min(settings.seedCap, Number(seed[0]?.coins) || 0) };
+  const stat = await sql<Array<{ coins: number }>>`
+    SELECT coins FROM stat_days WHERE steam_id = ${steamId} AND day = ${day}
+  `;
+  return {
+    coins: Number(money[0]?.coins) || 0,
+    seedToday: Math.min(settings.seedCap, Number(seed[0]?.coins) || 0),
+    statToday: Number(stat[0]?.coins) > 0,
+  };
 }
 
 export async function publicShop(steamId: string | null) {
@@ -154,7 +180,7 @@ export async function publicShop(steamId: string | null) {
     FROM shop_products WHERE hidden = 0 AND kind <> 'clanvip' ORDER BY sort_order, id
   `;
   const mine = await wallet(steamId);
-  return { signedIn: Boolean(steamId), ...settings, ...mine, products: products.map(card) };
+  return { signedIn: Boolean(steamId), ...settings, ...mine, statCoins: STAT_REFRESH_COINS, products: products.map(card) };
 }
 
 export async function buyProduct(steamId: string, productId: number) {

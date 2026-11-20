@@ -398,6 +398,14 @@ CREATE TABLE IF NOT EXISTS seed_days (
   PRIMARY KEY (steam_id, day)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS stat_days (
+  steam_id varchar(20) NOT NULL,
+  day date NOT NULL,
+  coins int NOT NULL DEFAULT 0,
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (steam_id, day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS squad_wallets (
   squad_id bigint NOT NULL PRIMARY KEY,
   coins int NOT NULL DEFAULT 0,

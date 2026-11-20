@@ -17,6 +17,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
   const id = params.get("id") ?? "";
   const sync = params.get("sync") ?? "";
   const job = params.get("job") ?? "";
+  const reward = params.get("reward") ?? "";
 
   const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
   function money(value: number | null | undefined) {
@@ -80,6 +81,8 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
       if (data.status === "ok") {
         if (data.flag) url.searchParams.set("sync", data.flag);
         else url.searchParams.delete("sync");
+        if (data.coins > 0) url.searchParams.set("reward", String(data.coins));
+        else if (data.already) url.searchParams.set("reward", "done");
         if (!url.searchParams.get("id") && data.steamId) url.searchParams.set("id", data.steamId);
       } else {
         url.searchParams.set("sync", data.sync || "expired");
@@ -204,6 +207,12 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
       const played = combat?.since || combat?.last
         ? `Играет здесь с ${esc(stamp(combat?.since) || "—")} · последний раз ${esc(stamp(combat?.last) || "—")}`
         : "";
+      const paid = Number(reward);
+      const rewardNote = paid > 0
+        ? `За обновление статистики начислено ${paid} очков. Следующие — завтра.`
+        : reward === "done"
+          ? "Сегодняшние 10 очков за обновление статистики уже начислены."
+          : "";
       const syncNote = sync === "same"
         ? "Цифры те же, что уже были. Свежее игра отдаст, если закрыть WARDOGS и снять ещё раз."
         : sync === "game_running"
@@ -219,6 +228,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
               : sync && sync !== "ok"
                 ? "Не вышло снять карьеру. Закрой игру и нажми ещё раз."
                 : "";
+      const syncText = [rewardNote, syncNote].filter(Boolean).join(" ");
       root.innerHTML = `
         <article class="dossier"${accent ? ` data-accent="${accent}"` : ""}>
           <header class="dossier-hero${portrait ? " has-op" : ""}">
@@ -247,7 +257,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
             </div>
             ${portrait ? `<img class="dossier-op" alt="" src="${portrait}" />` : ""}
           </header>
-          ${syncNote ? `<p class="note dossier-alert" id="sync-note">${esc(syncNote)}</p>` : `<p class="note" id="sync-note"></p>`}
+          ${syncText ? `<p class="note dossier-alert" id="sync-note">${esc(syncText)}</p>` : `<p class="note" id="sync-note"></p>`}
           <section class="dossier-meters">
             <div><span>Опыт ${shift(latest?.xp as number | null, previous?.xp as number | null)}</span><b>${num(latest?.xp as number | null)}</b></div>
             <div><span>Деньги ${shift(latest?.cash as number | null, previous?.cash as number | null)}</span><b>${money(latest?.cash as number | null)}</b></div>
@@ -446,9 +456,14 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
             location.href = `/auth/steam?next=${encodeURIComponent(`/p/?id=${id}`)}`;
             return;
           }
-          const result = await response.json().catch(() => ({})) as { saved?: boolean; unchanged?: boolean; reason?: string };
+          const result = await response.json().catch(() => ({})) as { saved?: boolean; unchanged?: boolean; reason?: string; coins?: number; already?: boolean };
           if (result.saved) {
-            location.href = result.unchanged ? `/p/?id=${id}&sync=same` : `/p/?id=${id}`;
+            const back = new URL(`/p/`, location.origin);
+            back.searchParams.set("id", id);
+            if (result.unchanged) back.searchParams.set("sync", "same");
+            if (result.coins) back.searchParams.set("reward", String(result.coins));
+            else if (result.already) back.searchParams.set("reward", "done");
+            location.href = back.pathname + back.search;
             return;
           }
           note.textContent = result.reason === "tracker_down"

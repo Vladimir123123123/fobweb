@@ -109,6 +109,13 @@ import Base from "../layouts/Base.astro";
     }
     const data = await response.json();
     const sync = new URLSearchParams(location.search).get("sync");
+    const reward = new URLSearchParams(location.search).get("reward");
+    const paid = Number(reward);
+    const rewardNote = paid > 0
+      ? `За обновление статистики начислено ${paid} очков. Следующие — завтра.`
+      : reward === "done"
+        ? "Сегодняшние 10 очков за обновление статистики уже начислены."
+        : "";
     const syncNote = sync === "wait"
       ? "Обновляем статистику. Не закрывай вкладку."
       : sync === "game_running"
@@ -122,7 +129,7 @@ import Base from "../layouts/Base.astro";
               : "";
     const seasonLabel = document.querySelector("#season-label");
     if (seasonLabel && data.season) seasonLabel.textContent = `сезон ${data.season}`;
-    note.textContent = syncNote || `Сезон ${data.season}. В списке ${data.players.length}.`;
+    note.textContent = [rewardNote, syncNote].filter(Boolean).join(" ") || `Сезон ${data.season}. В списке ${data.players.length}.`;
     const ranked = q.value.trim() === "";
     const hot = columns[sort.value] ?? 3;
     document.querySelectorAll<HTMLTableCellElement>(".ladder th").forEach((cell, index) => {
@@ -199,6 +206,8 @@ import Base from "../layouts/Base.astro";
         if (data.status === "ok") {
           if (data.flag) url.searchParams.set("sync", data.flag);
           else url.searchParams.delete("sync");
+          if (data.coins > 0) url.searchParams.set("reward", String(data.coins));
+          else if (data.already) url.searchParams.set("reward", "done");
           if (data.steamId && !url.searchParams.get("id")) url.searchParams.set("id", data.steamId);
         } else {
           url.searchParams.set("sync", data.sync || "expired");

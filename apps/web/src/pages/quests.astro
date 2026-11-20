@@ -4,7 +4,7 @@ import Base from "../layouts/Base.astro";
 <Base title="Квесты — WARDOGS СНГ" description="Квесты сервера FOB. После входа через Steam убийства на сервере приносят опыт и очки сообщества.">
   <p class="eyebrow">Сообщество</p>
   <h1>Квесты</h1>
-  <p class="lead">Запусти квест и выполняй его на сервере FOB. Опыт поднимает уровень сообщества до 600. Очки за квест приходят вам и, если вы в составе сквада, столько же в казну сквада. Очки с сида остаются только вашими. Личный VIP покупается ниже. Клановый слот дороже: его берёт лидер или заместитель из казны и сам выбирает, кому выдать.</p>
+  <p class="lead">Запусти квест и выполняй его на сервере FOB. Опыт поднимает уровень сообщества до 600. Очки за квест приходят вам и, если вы в составе сквада, столько же в казну сквада. Очки с сида и за кнопку «Обновить статистику» остаются только вашими. Личный VIP покупается ниже. Клановый слот дороже: его берёт лидер или заместитель из казны и сам выбирает, кому выдать.</p>
   <section id="quest-rank" class="quest-rank"></section>
   <h2>Магазин</h2>
   <p class="note" id="shop-rule"></p>
@@ -76,7 +76,7 @@ import Base from "../layouts/Base.astro";
     paint(await response.json());
   };
   type Product = { id: number; title: string; body: string; price: number; kind: string; days: number };
-  const paintShop = (data: { signedIn?: boolean; products?: Product[]; seedCoins?: number; seedCap?: number; seedBelow?: number; seedToday?: number }) => {
+  const paintShop = (data: { signedIn?: boolean; products?: Product[]; seedCoins?: number; seedCap?: number; seedBelow?: number; seedToday?: number; statCoins?: number; statToday?: boolean }) => {
     const perMinute = Number(data.seedCoins) || 0;
     const cap = Number(data.seedCap) || 0;
     const below = Number(data.seedBelow) || 20;
@@ -87,10 +87,13 @@ import Base from "../layouts/Base.astro";
       if (mod >= 2 && mod <= 4 && (teen < 12 || teen > 14)) return "очка";
       return "очков";
     };
+    const statCoins = Number(data.statCoins) || 10;
     shopRule.textContent = perMinute
-      ? `Пока на сервере меньше ${below} человек, минута в игре даёт ${perMinute} ${word(perMinute)}. В день не больше ${cap}. Месяц такого сида не закрывает VIP целиком, остальное добирают квесты, поэтому оплата в тикете Discord быстрее.`
-      : "Сид сейчас не начисляет очки.";
-    if (data.signedIn) shopRule.textContent += ` Сегодня с сида: ${Number(data.seedToday) || 0} из ${cap}.`;
+      ? `Пока на сервере меньше ${below} человек, минута в игре даёт ${perMinute} ${word(perMinute)}. В день не больше ${cap}. Кнопка «Обновить статистику» раз в сутки даёт ${statCoins} ${word(statCoins)}. Месяц такого сида не закрывает VIP целиком, остальное добирают квесты, поэтому оплата в тикете Discord быстрее.`
+      : `Сид сейчас не начисляет очки. Кнопка «Обновить статистику» раз в сутки даёт ${statCoins} ${word(statCoins)}.`;
+    if (data.signedIn) {
+      shopRule.textContent += ` Сегодня с сида: ${Number(data.seedToday) || 0} из ${cap}. Обновление статистики: ${data.statToday ? "уже начислено" : "ещё нет"}.`;
+    }
     const products = data.products ?? [];
     shop.innerHTML = products.map((product) => `<article class="shop-item"><div><h2>${esc(product.title)}</h2><p>${esc(product.body)}</p></div><p><b>${product.price} очков</b>${product.days ? `<br>${product.days} дней` : ""}</p><div>${data.signedIn ? `<button class="btn small" data-buy="${product.id}" data-kind="${esc(product.kind)}" type="button">Купить</button>` : `<a class="btn small" href="/auth/steam?next=/quests">Войти и купить</a>`}</div></article>`).join("") || "<p>В магазине пока пусто.</p>";
   };

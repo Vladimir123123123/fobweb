@@ -15,7 +15,7 @@ import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./serv
 import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
 import { adminQuestBoard, insertQuest, publicQuests, questInput, removeQuest, saveQuest, startQuest } from "./quests.js";
-import { adminShop, buyProduct, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
+import { adminShop, buyProduct, creditStatRefresh, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
 import { assignClanSlot, buyClanSlot, clanView, clearClanSlot, disbandSquad, finishRevoke, officerOf, pendingRevokes, removeMember, setDeputy } from "./clan.js";
 import { weekBoard } from "./week.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
@@ -142,6 +142,7 @@ type LoginJob = {
   fail: string;
   steamId: string;
   flag: string;
+  reward?: number;
 };
 const loginBusy = new Set<string>();
 
@@ -154,8 +155,9 @@ async function readLoginJob(ticket: string): Promise<LoginJob | null> {
     fail: string;
     steam_id: string;
     flag: string;
+    reward: number;
   }[]>`
-    SELECT oauth_code, next_path, status, fail, steam_id, flag
+    SELECT oauth_code, next_path, status, fail, steam_id, flag, reward
     FROM auth_jobs WHERE ticket = ${ticket} AND expires_at > NOW()
   `;
   const row = rows[0];
@@ -168,19 +170,21 @@ async function readLoginJob(ticket: string): Promise<LoginJob | null> {
     fail: row.fail,
     steamId: row.steam_id,
     flag: row.flag,
+    reward: Number(row.reward),
   };
 }
 
 async function writeLoginJob(job: LoginJob) {
   await sql`
-    INSERT INTO auth_jobs (ticket, oauth_code, next_path, status, fail, steam_id, flag, expires_at)
+    INSERT INTO auth_jobs (ticket, oauth_code, next_path, status, fail, steam_id, flag, reward, expires_at)
     VALUES (
       ${job.ticket}, ${job.code}, ${job.where}, ${job.status}, ${job.fail}, ${job.steamId}, ${job.flag},
+      ${job.reward ?? -1},
       DATE_ADD(NOW(), INTERVAL ${AUTH_COOKIE_AGE} SECOND)
     )
     ON DUPLICATE KEY UPDATE
       status = VALUES(status), fail = VALUES(fail), steam_id = VALUES(steam_id),
-      flag = VALUES(flag), oauth_code = VALUES(oauth_code)
+      flag = VALUES(flag), reward = VALUES(reward), oauth_code = VALUES(oauth_code)
   `;
 }
 
@@ -731,6 +735,15 @@ async function tradeWardogsOnce(code: string): Promise<{ fail: string; traded: T
   }
 }
 
+async function rewardForRefresh(steamId: string) {
+  try {
+    return await creditStatRefresh(steamId);
+  } catch (error) {
+    app.log.error(error);
+    return -1;
+  }
+}
+
 async function finishWardogsJob(ticket: string) {
   if (loginBusy.has(ticket)) return;
   const job = await readLoginJob(ticket);
@@ -747,6 +760,7 @@ async function finishWardogsJob(ticket: string) {
       try {
         await upsertUser(steamId);
         const saved = await pullPublicCareer(steamId);
+        const reward = saved ? await rewardForRefresh(steamId) : -1;
         await writeLoginJob({
           ...job,
           code: "",
@@ -755,6 +769,7 @@ async function finishWardogsJob(ticket: string) {
           status: saved ? "ok" : "fail",
           fail: saved ? "" : (fail || "empty"),
           flag: "",
+          reward,
         });
       } catch (error) {
         app.log.error(error);
@@ -778,6 +793,7 @@ async function finishWardogsJob(ticket: string) {
     }
     if (!saved) saved = await pullPublicCareer(steamId);
     const live = traded?.synced === true;
+    const reward = saved ? await rewardForRefresh(steamId) : -1;
     await writeLoginJob({
       ...job,
       code: "",
@@ -786,6 +802,7 @@ async function finishWardogsJob(ticket: string) {
       status: "ok",
       fail: "",
       flag: !saved ? (careerStats == null ? "game_running" : "empty") : live ? "" : "stale",
+      reward,
     });
   } finally {
     loginBusy.delete(ticket);
@@ -841,7 +858,14 @@ app.get("/api/auth/status", async (request, reply) => {
       cookieString("wd_login", "", 0),
       cookieString("wd_session", createSession(job.steamId), 14 * 24 * 3600),
     ]);
-    return { status: "ok", steamId: job.steamId, flag: job.flag || "", next: `/p/?id=${job.steamId}` };
+    return {
+      status: "ok",
+      steamId: job.steamId,
+      flag: job.flag || "",
+      next: `/p/?id=${job.steamId}`,
+      coins: job.reward && job.reward > 0 ? job.reward : 0,
+      already: job.reward === 0,
+    };
   }
   writeCookies(reply, [cookieString("wd_login", "", 0)]);
   return { status: "fail", sync: job.fail || "token_err", next: job.where };
@@ -939,12 +963,11 @@ app.post("/api/me/sync", async (request, reply) => {
   const body = asObject(request.body);
   const brought = body?.player && typeof body.player === "object" ? body.player as Record<string, unknown> : null;
   const broughtId = brought && typeof brought.steamId === "string" ? brought.steamId : "";
-  if (brought && broughtId === steamId && playerStats({ player: brought })) {
-    const result = await applyCareer(steamId, { player: brought }, "tracker");
-    return { ok: true, ...result };
-  }
-  const result = await refreshCareer(steamId);
-  return { ok: true, ...result };
+  const result = brought && broughtId === steamId && playerStats({ player: brought })
+    ? await applyCareer(steamId, { player: brought }, "tracker")
+    : await refreshCareer(steamId);
+  const coins = result.saved ? await rewardForRefresh(steamId) : -1;
+  return { ok: true, ...result, coins: coins > 0 ? coins : 0, already: coins === 0 };
 });
 
 app.patch("/api/me", async (request, reply) => {
