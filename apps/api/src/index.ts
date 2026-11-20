@@ -14,6 +14,7 @@ import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./server-combat.js";
 import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
+import { adminQuestBoard, insertQuest, publicQuests, questInput, removeQuest, saveQuest, startQuest } from "./quests.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 function trackerRequest(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) {
@@ -1855,6 +1856,46 @@ app.post("/api/builds/:id/notes", async (request, reply) => {
     INSERT INTO build_notes (build_id, steam_id, kind, body)
     VALUES (${id}, ${steamId}, ${kind}, ${note})
   `;
+  return { ok: true };
+});
+
+app.get("/api/quests", async (request) => publicQuests(steamIdOf(request)));
+
+app.post("/api/quests/:id/start", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  if (!steamId) return reply.code(401).send({ error: "steam" });
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1) return notFound(reply);
+  const result = await startQuest(steamId, id);
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return publicQuests(steamId);
+});
+
+app.get("/api/admin/quests", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  return adminQuestBoard();
+});
+
+app.post("/api/admin/quests", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const input = questInput(asObject(request.body));
+  if (!input) return reply.code(400).send({ error: "bad_request" });
+  return { ok: true, id: await insertQuest(input) };
+});
+
+app.patch("/api/admin/quests/:id", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  const input = questInput(asObject(request.body));
+  if (!Number.isInteger(id) || id < 1 || !input) return reply.code(400).send({ error: "bad_request" });
+  if (!(await saveQuest(id, input))) return notFound(reply);
+  return { ok: true };
+});
+
+app.delete("/api/admin/quests/:id", async (request, reply) => {
+  if (!(await isAdmin(steamIdOf(request)))) return notFound(reply);
+  const id = Number((request.params as { id: string }).id);
+  if (!Number.isInteger(id) || id < 1 || !(await removeQuest(id))) return notFound(reply);
   return { ok: true };
 });
 

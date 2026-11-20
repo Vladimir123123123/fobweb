@@ -950,6 +950,22 @@ label.check input { width: auto; }
 .desk-meter { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; margin: 8px 0 4px; }
 .desk-meter p { display: flex; justify-content: space-between; gap: 12px; margin: 0; padding: 8px 10px; border: 1px solid var(--line); background: var(--bg-2); }
 .desk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.quest-rank { margin: 18px 0; padding: 16px; border: 1px solid rgba(239, 170, 24, 0.35); background: rgba(12, 15, 13, 0.82); }
+.quest-score { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
+.quest-score b { font-family: Oswald, "Golos Text", sans-serif; font-size: 32px; color: #fff; font-weight: 500; }
+.quest-score span { color: var(--muted); }
+.rank-bar { height: 8px; margin: 8px 0; background: #1a1e1b; }
+.rank-bar span { display: block; height: 100%; background: #efaa18; }
+.quest-list { display: grid; gap: 10px; }
+.quest, .quest-line { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 120px minmax(140px, 0.7fr); gap: 12px 16px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
+.quest h2, .quest-templates h3 { margin: 0 0 6px; font-size: 18px; }
+.quest p, .quest li, .quest-line p { margin: 0; }
+.quest ul { margin: 0; padding-left: 16px; display: grid; gap: 4px; color: var(--muted); }
+.quest-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quest-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 12px 0; }
+.quest-templates[hidden] { display: none; }
+.quest-table { margin-top: 8px; }
+.guide-form select, .guide-form input, .guide-form textarea { width: 100%; }
 .guide-form [hidden] { display: none; }
 .guide-form .check { display: flex; gap: 8px; align-items: center; }
 .guide-notes strong { color: #fff; font-weight: 500; }
@@ -1533,7 +1549,7 @@ body.fit .foot { padding: 8px 0 10px; }
   .consent { flex-direction: column; align-items: stretch; }
   .consent div { width: 100%; }
   .consent .btn { flex: 1; }
-  .steps, .grid-2, .hero, .guide-grid, .home-grid { grid-template-columns: 1fr; }
+  .steps, .grid-2, .hero, .guide-grid, .home-grid, .quest, .quest-line { grid-template-columns: 1fr; }
   .squad-card { grid-template-columns: 64px 1fr; gap: 12px; }
   .squad-card .squad-mark { width: 64px; height: 64px; font-size: 13px; }
   .squad-grid, .squad-fields, .squad-assets { grid-template-columns: 1fr; }

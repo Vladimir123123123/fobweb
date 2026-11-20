@@ -48,6 +48,7 @@ export function getStaticPaths() {
         <button type="button" data-desk="players">Игроки</button>
         <button type="button" data-desk="squads">Сквады${queue ? ` ${queue}` : ""}</button>
         <button type="button" data-desk="builds">Сборки</button>
+        <button type="button" data-desk="quests">Квесты</button>
         <button type="button" data-desk="access">Доступ</button>
       </nav>
       <section class="desk" data-desk="home">
@@ -109,6 +110,47 @@ export function getStaticPaths() {
         <h2>Сборки</h2>
         <div class="desk-list" id="builds">${(data.builds ?? []).map((build: { id: number; title: string; season: string; hidden: boolean; persona: string | null }) => `<div class="desk-row"><p class="grow"><a href="/b?id=${build.id}">${esc(build.title)}</a> · сезон ${esc(String(build.season))} · ${esc(build.persona ?? "")}</p>${build.hidden ? `<button class="btn ghost small" data-build="${build.id}" data-on="1" type="button">Вернуть</button>` : `<button class="btn ghost small" data-build="${build.id}" data-on="0" type="button">Скрыть</button>`}</div>`).join("") || "<p>Сборок нет.</p>"}</div>
       </section>
+      <section class="desk" data-desk="quests" hidden>
+        <h2>Квесты</h2>
+        <p class="note">Игроки запускают их на <a href="/quests">/quests</a> после входа через Steam. Считаются чужие убийства после кнопки «Начать»: свои и самоубийства не входят. Опыт и очки — сообщества, не карьера в игре. 50 опыта поднимают уровень на 1, потолок 600.</p>
+        <div class="row">
+          <button class="btn ghost" id="quest-templates" type="button">Шаблоны</button>
+          <button class="btn" id="quest-new" type="button">Новый квест</button>
+        </div>
+        <div id="quest-template-list" class="quest-templates" hidden></div>
+        <form id="quest-form" class="guide-form" hidden>
+          <div class="desk-split">
+            <label>Заголовок<input id="quest-title" maxlength="120" required></label>
+            <label>Убийства<input id="quest-kills" type="number" min="1" max="500" value="10" required></label>
+          </div>
+          <div class="desk-split">
+            <label>Сложность<select id="quest-difficulty"><option value="easy">Легкая</option><option value="mid" selected>Средняя</option><option value="hard">Сложная</option></select></label>
+            <label>Повтор<select id="quest-repeat"><option value="once">Один раз</option><option value="weekly">Еженедельно</option><option value="monthly">Ежемесячно</option></select></label>
+          </div>
+          <label>Описание для игроков<textarea id="quest-body" maxlength="500" required></textarea></label>
+          <div class="desk-split">
+            <label>Опыт<input id="quest-xp" type="number" min="0" max="2000" value="100"></label>
+            <label>Очки<input id="quest-coins" type="number" min="0" max="5000" value="40"></label>
+          </div>
+          <div class="desk-split">
+            <label>Не ближе, м<input id="quest-min" type="number" min="0" max="2000" value="0"></label>
+            <label>Не дальше, м<input id="quest-max" type="number" min="0" max="2000" value="0"></label>
+          </div>
+          <label>Оружие, слова через запятую<input id="quest-weapon" maxlength="120" placeholder="пусто — любое"></label>
+          <label class="check"><input id="quest-head" type="checkbox"> Только в голову</label>
+          <div class="desk-split">
+            <label>Начало<input id="quest-start" type="datetime-local"></label>
+            <label>Конец<input id="quest-end" type="datetime-local"></label>
+          </div>
+          <div class="row">
+            <button class="btn" id="quest-live" type="submit">Сохранить и запустить</button>
+            <button class="btn ghost" id="quest-draft" type="button">Сохранить черновик</button>
+            <button class="btn ghost" id="quest-cancel" type="button">Отмена</button>
+          </div>
+          <p id="quest-note" class="note"></p>
+        </form>
+        <div class="quest-table" id="quest-admin"></div>
+      </section>
       <section class="desk" data-desk="access" hidden>
         <h2>Топ сезона ${esc(String(data.season ?? ""))}</h2>
         <p class="note">В этом сезоне снимков: ${data.seasonPlayers ?? 0}. Кнопка стирает только текущий сезон. Сезон 2 остаётся.</p>
@@ -123,6 +165,7 @@ export function getStaticPaths() {
     const openDesk = (name: string) => {
       for (const node of desks) node.hidden = node.dataset.desk !== name;
       gate.querySelectorAll<HTMLButtonElement>("#desk-nav button").forEach((button) => button.classList.toggle("on", button.dataset.desk === name));
+      if (name === "quests") loadQuests();
     };
     gate.querySelector("#desk-nav")?.addEventListener("click", (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>("button");
@@ -297,5 +340,119 @@ export function getStaticPaths() {
         location.reload();
       });
     });
+    type QuestDraft = { title: string; body: string; kills: number; difficulty: string; repeat: string; xp: number; coins: number; minMeters: number; maxMeters: number; headshot: boolean; weapon: string; status?: string; startsAt?: string | null; endsAt?: string | null; id?: number; started?: number; finished?: number };
+    let questEditing = 0;
+    let questTemplates: QuestDraft[] = [];
+    const q = (id: string) => gate.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(id);
+    const questForm = gate.querySelector<HTMLFormElement>("#quest-form");
+    const questTemplatesBox = gate.querySelector<HTMLElement>("#quest-template-list");
+    const localStamp = (value: string | null | undefined) => {
+      if (!value) return "";
+      const date = new Date(String(value).replace(" ", "T") + (String(value).endsWith("Z") ? "" : "Z"));
+      if (Number.isNaN(date.getTime())) return "";
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+    const fillQuest = (draft: QuestDraft) => {
+      questForm?.removeAttribute("hidden");
+      if (q("#quest-title")) q("#quest-title")!.value = draft.title;
+      if (q("#quest-body")) q("#quest-body")!.value = draft.body;
+      if (q("#quest-kills")) q("#quest-kills")!.value = String(draft.kills);
+      if (q("#quest-difficulty")) q("#quest-difficulty")!.value = draft.difficulty;
+      if (q("#quest-repeat")) q("#quest-repeat")!.value = draft.repeat;
+      if (q("#quest-xp")) q("#quest-xp")!.value = String(draft.xp);
+      if (q("#quest-coins")) q("#quest-coins")!.value = String(draft.coins);
+      if (q("#quest-min")) q("#quest-min")!.value = String(draft.minMeters || 0);
+      if (q("#quest-max")) q("#quest-max")!.value = String(draft.maxMeters || 0);
+      if (q("#quest-weapon")) q("#quest-weapon")!.value = draft.weapon || "";
+      const head = gate.querySelector<HTMLInputElement>("#quest-head");
+      if (head) head.checked = Boolean(draft.headshot);
+      if (q("#quest-start")) q("#quest-start")!.value = localStamp(draft.startsAt);
+      if (q("#quest-end")) q("#quest-end")!.value = localStamp(draft.endsAt);
+    };
+    const questPayload = (status: string) => ({
+      title: q("#quest-title")?.value ?? "",
+      body: q("#quest-body")?.value ?? "",
+      kills: Number(q("#quest-kills")?.value || 0),
+      difficulty: q("#quest-difficulty")?.value || "mid",
+      repeat: q("#quest-repeat")?.value || "once",
+      xp: Number(q("#quest-xp")?.value || 0),
+      coins: Number(q("#quest-coins")?.value || 0),
+      minMeters: Number(q("#quest-min")?.value || 0),
+      maxMeters: Number(q("#quest-max")?.value || 0),
+      weapon: q("#quest-weapon")?.value ?? "",
+      headshot: gate.querySelector<HTMLInputElement>("#quest-head")?.checked === true,
+      startsAt: q("#quest-start")?.value ? new Date(q("#quest-start")!.value).toISOString() : null,
+      endsAt: q("#quest-end")?.value ? new Date(q("#quest-end")!.value).toISOString() : null,
+      status,
+    });
+    const saveQuestForm = async (status: string) => {
+      const note = gate.querySelector("#quest-note");
+      const payload = questPayload(status);
+      const response = await fetch(questEditing ? `/api/admin/quests/${questEditing}` : "/api/admin/quests", {
+        method: questEditing ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        if (note) note.textContent = "Проверь заголовок, описание и число убийств.";
+        return;
+      }
+      questEditing = 0;
+      questForm?.reset();
+      questForm?.setAttribute("hidden", "");
+      loadQuests();
+    };
+    const loadQuests = async () => {
+      const board = await fetch("/api/admin/quests").then((response) => response.ok ? response.json() : null);
+      const list = gate.querySelector("#quest-admin");
+      if (!board || !list || !questTemplatesBox) return;
+      questTemplates = board.templates ?? [];
+      const diff: Record<string, string> = { easy: "Легкая", mid: "Средняя", hard: "Сложная" };
+      const repeat: Record<string, string> = { once: "Один раз", weekly: "Еженедельно", monthly: "Ежемесячно" };
+      questTemplatesBox.innerHTML = questTemplates.map((item, index) => `<article class="panel"><p class="eyebrow">${diff[item.difficulty] || "Средняя"}</p><h3>${esc(item.title)}</h3><p>${esc(item.body)}</p><p class="note">${item.kills} убийств · ${item.xp} опыта · ${item.coins} очков</p><button class="btn small" data-template="${index}" type="button">Использовать как черновик</button></article>`).join("");
+      list.innerHTML = board.quests.map((item: QuestDraft) => `<article class="quest-line"><div><b>${esc(item.title)}</b><p>${esc(item.body)}</p></div><p><span class="pill">${item.status === "live" ? "Идёт" : "Черновик"}</span> <span class="pill">${diff[item.difficulty] || ""}</span> <span class="pill">${repeat[item.repeat] || ""}</span></p><p class="note">${item.kills} убийств${item.headshot ? " · в голову" : ""}${item.minMeters ? ` · от ${item.minMeters} м` : ""}${item.maxMeters ? ` · до ${item.maxMeters} м` : ""}${item.weapon ? ` · ${esc(item.weapon)}` : ""}</p><p>Начато ${item.started || 0}<br>Завершено ${item.finished || 0}</p><p>${item.xp} опыта<br>${item.coins} очков</p><p><button class="btn ghost small" data-quest-edit="${item.id}" type="button">Изменить</button> <button class="btn ghost small" data-quest-delete="${item.id}" type="button">Удалить</button></p></article>`).join("") || "<p>Квестов пока нет. Шаблон можно запустить как есть.</p>";
+      list.querySelectorAll<HTMLButtonElement>("[data-quest-edit]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const found = (board.quests as QuestDraft[]).find((item) => item.id === Number(button.dataset.questEdit));
+          if (!found) return;
+          questEditing = Number(found.id);
+          fillQuest(found);
+        });
+      });
+      list.querySelectorAll<HTMLButtonElement>("[data-quest-delete]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          await fetch(`/api/admin/quests/${button.dataset.questDelete}`, { method: "DELETE" });
+          loadQuests();
+        });
+      });
+    };
+    gate.querySelector("#quest-templates")?.addEventListener("click", () => {
+      if (!questTemplatesBox) return;
+      questTemplatesBox.hidden = !questTemplatesBox.hidden;
+    });
+    questTemplatesBox?.addEventListener("click", (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("[data-template]");
+      if (!button) return;
+      const draft = questTemplates[Number(button.dataset.template)];
+      if (!draft) return;
+      questEditing = 0;
+      fillQuest(draft);
+    });
+    gate.querySelector("#quest-new")?.addEventListener("click", () => {
+      questEditing = 0;
+      questForm?.reset();
+      questForm?.removeAttribute("hidden");
+    });
+    gate.querySelector("#quest-cancel")?.addEventListener("click", () => {
+      questEditing = 0;
+      questForm?.reset();
+      questForm?.setAttribute("hidden", "");
+    });
+    questForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveQuestForm("live");
+    });
+    gate.querySelector("#quest-draft")?.addEventListener("click", () => saveQuestForm("draft"));
   }
 </script>

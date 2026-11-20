@@ -311,3 +311,39 @@ CREATE TABLE IF NOT EXISTS home_side (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO home_side (id, streams, vips) VALUES (1, '[]', '[]');
+
+CREATE TABLE IF NOT EXISTS community (
+  steam_id varchar(20) NOT NULL PRIMARY KEY,
+  xp int NOT NULL DEFAULT 0,
+  coins int NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS quests (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title varchar(120) NOT NULL,
+  body varchar(500) NOT NULL,
+  kills int NOT NULL,
+  difficulty varchar(8) NOT NULL DEFAULT 'mid',
+  repeat_kind varchar(8) NOT NULL DEFAULT 'once',
+  xp int NOT NULL DEFAULT 0,
+  coins int NOT NULL DEFAULT 0,
+  min_meters int NOT NULL DEFAULT 0,
+  max_meters int NOT NULL DEFAULT 0,
+  headshot tinyint(1) NOT NULL DEFAULT 0,
+  weapon varchar(120) NOT NULL DEFAULT '',
+  status varchar(8) NOT NULL DEFAULT 'live',
+  starts_at datetime(3) NULL,
+  ends_at datetime(3) NULL,
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS quest_runs (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  quest_id bigint NOT NULL,
+  steam_id varchar(20) NOT NULL,
+  period_key varchar(16) NOT NULL,
+  started_at datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  status varchar(8) NOT NULL DEFAULT 'active',
+  done_at datetime(3) NULL,
+  UNIQUE KEY quest_run (quest_id, steam_id, period_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

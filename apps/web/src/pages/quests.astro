@@ -1,0 +1,84 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Квесты — WARDOGS СНГ" description="Квесты сервера FOB. После входа через Steam убийства на сервере приносят опыт и очки сообщества.">
+  <p class="eyebrow">Сообщество</p>
+  <h1>Квесты</h1>
+  <p class="lead">Запусти квест и выполняй его на сервере FOB. Опыт поднимает уровень сообщества до 600. Очки потом можно будет потратить на VIP. Это не цифры карьеры в игре.</p>
+  <section id="quest-rank" class="quest-rank"></section>
+  <section id="quest-list" class="quest-list"></section>
+</Base>
+<script>
+  const rank = document.querySelector<HTMLElement>("#quest-rank")!;
+  const list = document.querySelector<HTMLElement>("#quest-list")!;
+  const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+  const diff: Record<string, string> = { easy: "Легкая", mid: "Средняя", hard: "Сложная" };
+  const repeat: Record<string, string> = { once: "Один раз", weekly: "Еженедельно", monthly: "Ежемесячно" };
+  type Quest = {
+    id: number; title: string; body: string; kills: number; difficulty: string; repeat: string;
+    xp: number; coins: number; minMeters: number; maxMeters: number; headshot: boolean; weapon: string;
+    state: string; progress: number;
+  };
+  const rules = (quest: Quest) => {
+    const lines = [`${quest.kills} убийств`];
+    if (quest.weapon) lines.push(quest.weapon);
+    if (quest.minMeters) lines.push(`не ближе ${quest.minMeters} м`);
+    if (quest.maxMeters) lines.push(`не дальше ${quest.maxMeters} м`);
+    if (quest.headshot) lines.push("только в голову");
+    lines.push("свои и самоубийства не считаются");
+    return lines.map((line) => `<li>${esc(line)}</li>`).join("");
+  };
+  const paint = (data: { signedIn?: boolean; level?: number; into?: number; need?: number; coins?: number; maxed?: boolean; quests?: Quest[] }) => {
+    const level = Number(data.level) || 0;
+    const into = Number(data.into) || 0;
+    const need = Number(data.need) || 50;
+    const width = data.maxed ? 100 : Math.max(0, Math.min(100, Math.round((into / need) * 100)));
+    rank.innerHTML = data.signedIn
+      ? `<p class="eyebrow">Уровень сообщества</p><div class="quest-score"><b>${level}</b><span>из 600</span><b>${data.coins || 0}</b><span>очков</span></div><div class="rank-bar" aria-hidden="true"><span style="width:${width}%"></span></div><p class="note">${data.maxed ? "Потолок уровня." : `До следующего уровня ${need - into} опыта.`} 50 опыта — один уровень.</p>`
+      : `<p>Чтобы взять квест, войди через Steam.</p><a class="btn" href="/auth/steam?next=/quests">Войти через Steam</a>`;
+    const quests = data.quests ?? [];
+    list.innerHTML = quests.map((quest) => {
+      const done = quest.state === "done";
+      const active = quest.state === "active";
+      const width = Math.max(0, Math.min(100, Math.round((quest.progress / Math.max(quest.kills, 1)) * 100)));
+      const action = done
+        ? `<span class="pill now">Завершено</span>`
+        : active
+          ? `<span class="pill">${quest.progress} / ${quest.kills}</span>`
+          : data.signedIn
+            ? `<button class="btn small" data-start="${quest.id}" type="button">Начать</button>`
+            : "";
+      return `<article class="quest">
+        <div>
+          <h2>${esc(quest.title)}</h2>
+          <p>${esc(quest.body)}</p>
+          <p class="quest-pills"><span class="pill">Идёт</span><span class="pill">${diff[quest.difficulty] || "Средняя"}</span><span class="pill">${repeat[quest.repeat] || "Один раз"}</span></p>
+        </div>
+        <ul>${rules(quest)}</ul>
+        <p><b>${quest.xp} опыта</b><br>${quest.coins} очков</p>
+        <div>${active || done ? `<div class="rank-bar" aria-hidden="true"><span style="width:${width}%"></span></div>` : ""}${action}</div>
+      </article>`;
+    }).join("") || "<p>Сейчас нет запущенных квестов.</p>";
+  };
+  const load = async () => {
+    const response = await fetch("/api/quests");
+    if (!response.ok) {
+      list.innerHTML = "<p>Квесты сейчас не открываются.</p>";
+      return;
+    }
+    paint(await response.json());
+  };
+  list.addEventListener("click", async (event) => {
+    const button = (event.target as Element).closest<HTMLButtonElement>("[data-start]");
+    if (!button) return;
+    button.disabled = true;
+    const response = await fetch(`/api/quests/${button.dataset.start}/start`, { method: "POST" });
+    if (response.status === 401) {
+      location.href = "/auth/steam?next=/quests";
+      return;
+    }
+    if (response.ok) paint(await response.json());
+    else button.disabled = false;
+  });
+  load();
+</script>
