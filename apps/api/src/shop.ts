@@ -44,12 +44,19 @@ export async function ensureShop() {
     INSERT IGNORE INTO shop_settings (id, seed_coins, seed_cap, seed_below)
     VALUES (1, ${DEFAULTS.seedCoins}, ${DEFAULTS.seedCap}, ${DEFAULTS.seedBelow})
   `;
+  await sql`
+    UPDATE shop_products
+    SET price = 4800,
+        title = ${"Клановый слот на 30 дней"},
+        body = ${"Один слот на 30 дней. Лидер или заместитель покупает его из казны сквада и выбирает, кому выдать. Личный VIP за очки дешевле, в тикете за 200 ₽ быстрее."}
+    WHERE kind = 'clanvip' AND price = 1600
+  `;
   const rows = await sql<Array<{ n: number }>>`SELECT CAST(COUNT(*) AS SIGNED) AS n FROM shop_products`;
   if (Number(rows[0]?.n)) return;
   await sql`
     INSERT INTO shop_products (title, body, price, kind, days, hidden, sort_order) VALUES
     (${"VIP на 30 дней"}, ${"Роль Спонсор в Discord на 30 дней. За 300 ₽ в тикете это быстрее, чем копить."}, 2400, ${"vip"}, 30, 0, 1),
-    (${"Клановый VIP на 30 дней"}, ${"Клановый слот и роль Спонсор на 30 дней. За 200 ₽ в тикете быстрее."}, 1600, ${"clanvip"}, 30, 0, 2)
+    (${"Клановый слот на 30 дней"}, ${"Один слот на 30 дней. Лидер или заместитель покупает его из казны сквада и выбирает, кому выдать. Личный VIP за очки дешевле, в тикете за 200 ₽ быстрее."}, 4800, ${"clanvip"}, 30, 0, 2)
   `;
 }
 
@@ -144,7 +151,7 @@ export async function publicShop(steamId: string | null) {
   const settings = await readSettings();
   const products = await sql<ProductRow[]>`
     SELECT id, title, body, price, kind, days, hidden, sort_order
-    FROM shop_products WHERE hidden = 0 ORDER BY sort_order, id
+    FROM shop_products WHERE hidden = 0 AND kind <> 'clanvip' ORDER BY sort_order, id
   `;
   const mine = await wallet(steamId);
   return { signedIn: Boolean(steamId), ...settings, ...mine, products: products.map(card) };
@@ -158,6 +165,7 @@ export async function buyProduct(steamId: string, productId: number) {
     `;
     const product = products[0];
     if (!product) return { error: "closed" as const };
+    if (product.kind === "clanvip") return { error: "clan" as const };
     const price = Number(product.price);
     const linked = await tx<Array<{ discord_id: string | null }>>`
       SELECT discord_id FROM users WHERE steam_id = ${steamId}
@@ -236,21 +244,25 @@ export async function removeProduct(id: number) {
 }
 
 export async function pendingGrants() {
-  const rows = await sql<Array<{ id: number; discord_id: string; kind: string; days: number; title: string }>>`
-    SELECT g.id, g.discord_id, g.kind, g.days, o.title
+  const rows = await sql<Array<{ id: number; discord_id: string; kind: string; days: number; title: string; until_at: Date | string | null }>>`
+    SELECT g.id, g.discord_id, g.kind, g.days, g.until_at, o.title
     FROM shop_grants g
     JOIN shop_orders o ON o.id = g.order_id
     WHERE g.status = 'pending'
     ORDER BY g.id
     LIMIT 20
   `;
-  return rows.map((row) => ({
-    id: Number(row.id),
-    discordId: String(row.discord_id),
-    kind: row.kind === "clanvip" ? "clanvip" : "vip",
-    days: Number(row.days) || 0,
-    title: row.title,
-  }));
+  return rows.map((row) => {
+    const until = row.until_at instanceof Date ? row.until_at : row.until_at ? new Date(row.until_at) : null;
+    return {
+      id: Number(row.id),
+      discordId: String(row.discord_id),
+      kind: row.kind === "clanvip" ? "clanvip" : "vip",
+      days: Number(row.days) || 0,
+      title: row.title,
+      until: until && !Number.isNaN(until.getTime()) ? until.toISOString() : "",
+    };
+  });
 }
 
 export async function finishGrant(id: number) {

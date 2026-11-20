@@ -1,3 +1,4 @@
+import { creditClanQuest } from "./clan.js";
 import { sql } from "./db.js";
 
 export const LEVEL_STEP = 50;
@@ -176,6 +177,7 @@ async function award(runId: number, steamId: string, xp: number, coins: number) 
         xp = LEAST(${cap}, xp + ${xp}),
         coins = coins + ${coins}
     `;
+    await creditClanQuest(tx, steamId, coins);
     return true;
   });
 }

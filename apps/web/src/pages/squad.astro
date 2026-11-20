@@ -26,10 +26,11 @@ import Base from "../layouts/Base.astro";
       const memberHere = onThis && seat?.status === "member";
       const pendingHere = onThis && seat?.status === "pending";
       const memberElsewhere = seat?.status === "member" && !onThis;
-      const leader = Boolean(data.mine);
+      const office = data.office === "leader" || data.office === "deputy" ? data.office : "";
+      const staff = Boolean(office);
       const mine = me.user?.steam_id ? String(me.user.steam_id) : "";
       const rosterRows = members.filter((member) => member.status === "member");
-      const applications = leader ? members.filter((member) => member.status === "pending") : [];
+      const applications = staff ? members.filter((member) => member.status === "pending") : [];
       const person = (member: { steam_id: string; persona: string | null; avatar: string | null }, label: string) => `
         <a href="/p?id=${member.steam_id}">
           ${member.avatar ? `<img src="${esc(member.avatar)}" alt="" />` : `<span class="mate-fallback">${esc((member.persona ?? "?").slice(0, 1))}</span>`}
@@ -40,7 +41,7 @@ import Base from "../layouts/Base.astro";
         </a>`;
       const activity = data.activity as { days: string[]; rows: Array<{ steamId: string; cells: Array<{ place: number; minutes: number; kills: number } | null> }> } | null;
       const names = new Map(rosterRows.map((member) => [member.steam_id, member.persona ?? member.steam_id]));
-      const activityTable = leader && activity ? `
+      const activityTable = staff && activity ? `
         <section class="activity">
           <div class="hall-head">
             <h2>Активность</h2>
@@ -58,12 +59,28 @@ import Base from "../layouts/Base.astro";
             </table>
           </div>
         </section>` : "";
+      type ClanSlot = { id: number; until: string; holder: string; holderName: string };
+      const clan = data.clan as { coins?: number; price?: number; days?: number; slots?: ClanSlot[] } | null;
+      const slots = clan?.slots ?? [];
+      const held = new Map(slots.filter((slot) => slot.holder).map((slot) => [slot.holder, slot.until]));
+      const ruDate = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", year: "numeric" }).format(new Date(iso));
+      const slotWord = (count: number) => {
+        const mod = count % 10;
+        const teen = count % 100;
+        if (mod === 1 && teen !== 11) return "слот";
+        if (mod >= 2 && mod <= 4 && (teen < 12 || teen > 14)) return "слота";
+        return "слотов";
+      };
       const roster = rosterRows.map((member) => {
-        const label = member.role === "leader" ? "лидер" : "в составе";
+        const vipUntil = held.get(member.steam_id);
+        const label = `${member.role === "leader" ? "лидер" : member.role === "deputy" ? "заместитель" : "в составе"}${vipUntil ? ` · VIP до ${ruDate(vipUntil)}` : ""}`;
+        const manage = staff && member.role !== "leader" && member.steam_id !== mine
+          ? `<button class="btn ghost small" type="button" data-role="${member.steam_id}" data-deputy="${member.role === "deputy" ? "0" : "1"}">${member.role === "deputy" ? "Снять заместителя" : "Сделать заместителем"}</button><button class="btn ghost small" type="button" data-remove="${member.steam_id}">Исключить</button>`
+          : "";
         return `
-        <article class="mate${member.role === "leader" ? " lead" : ""}" data-member="${member.steam_id}" data-label="${label}">
+        <article class="mate${member.role === "leader" ? " lead" : member.role === "deputy" ? " deputy" : ""}" data-member="${member.steam_id}" data-label="${esc(label)}">
           ${person(member, label)}
-          ${member.steam_id === mine ? "" : `<span class="mate-actions"><button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>${leader && member.role !== "leader" ? `<button class="btn ghost small" type="button" data-remove="${member.steam_id}">Исключить</button>` : ""}</span>`}
+          ${member.steam_id === mine ? "" : `<span class="mate-actions"><button class="mate-report" type="button" data-steam="${member.steam_id}" data-name="${esc(member.persona ?? member.steam_id)}">Репорт</button>${manage}</span>`}
         </article>`;
       }).join("");
       const queue = applications.map((member) => `
@@ -109,6 +126,27 @@ import Base from "../layouts/Base.astro";
             ${memberHere ? `<span class="note">Вы в составе.</span>` : pendingHere ? `<span class="note">Заявка на рассмотрении.</span>` : memberElsewhere ? `<span class="note">Вы уже состоите в скваде.</span>` : squad.closed ? `<span class="note">Набор закрыт.</span>` : `<button class="btn small" id="join" type="button">Подать заявку</button>`}
           </div>
         </article>
+        ${slots.length && !staff ? `<p class="note">VIP: ${slots.length} ${slotWord(slots.length)}. ${esc([...new Set(slots.map((slot) => ruDate(slot.until)))].length === 1 ? `Оплачены до ${ruDate(slots[0].until)}` : "Сроки у слотов разные")}</p>` : ""}
+        ${staff && clan ? (() => {
+          const dates = [...new Set(slots.map((slot) => ruDate(slot.until)))];
+          const paid = slots.length ? (dates.length === 1 ? `Оплачены до ${dates[0]}` : "Сроки у слотов разные") : "Оплаченных слотов нет";
+          const freePeople = rosterRows.filter((member) => !held.has(member.steam_id));
+          const lines = slots.map((slot) => {
+            if (slot.holder) {
+              return `<li><b>до ${esc(ruDate(slot.until))}</b> · ${esc(slot.holderName || slot.holder)} <button class="btn ghost small" type="button" data-clear-slot="${slot.id}">Снять</button></li>`;
+            }
+            const options = freePeople.map((member) => `<option value="${member.steam_id}">${esc(member.persona ?? member.steam_id)}</option>`).join("");
+            return `<li><b>до ${esc(ruDate(slot.until))}</b> · свободен <select data-slot-holder="${slot.id}">${options}</select> <button class="btn small" type="button" data-assign="${slot.id}">Выдать</button></li>`;
+          }).join("");
+          const price = Number(clan.price) || 0;
+          return `<section class="clan-desk">
+            <div class="hall-head"><h2>Казна и VIP</h2><p class="note">Очки за квесты состава копируются в казну. Слот покупается отсюда, и вы сами выбираете, кому его выдать.</p></div>
+            <p class="clan-stats"><b>${Number(clan.coins) || 0}</b> очков в казне · <b>${slots.length}</b> VIP ${slotWord(slots.length)} · ${esc(paid)}</p>
+            ${price > 0 ? `<button class="btn small" id="buy-slot" type="button">Купить слот · ${price} очков · ${Number(clan.days) || 0} дней</button>` : `<p class="note">Покупка слота сейчас закрыта.</p>`}
+            ${lines ? `<ul class="clan-slots">${lines}</ul>` : ""}
+            ${office === "leader" ? `<button class="btn ghost small" id="disband" type="button">Расформировать состав</button>` : ""}
+          </section>`;
+        })() : ""}
         ${queue ? `<div class="hall-head"><h2>Заявки</h2><p class="note">${applications.length}</p></div><div class="hall-roster">${queue}</div>` : ""}
         <div class="hall-head">
           <h2>Состав</h2>
@@ -192,6 +230,88 @@ import Base from "../layouts/Base.astro";
           note.textContent = sent.ok ? "Игрок исключён из состава." : "Этого игрока уже нет в составе.";
           if (sent.ok) location.reload();
         });
+      });
+      const clanErrors: Record<string, string> = {
+        poor: "В казне не хватает очков.",
+        closed: "Покупка слота сейчас закрыта.",
+        discord: "У этого игрока не привязан Discord. Роль Спонсор некуда выдать.",
+        held: "У этого игрока уже есть слот.",
+        taken: "Этот слот уже выдан.",
+        gone: "Слот или игрок уже изменились.",
+      };
+      document.querySelector("#buy-slot")?.addEventListener("click", async () => {
+        const note = document.querySelector("#squad-note")!;
+        const price = Number(clan?.price) || 0;
+        if (!window.confirm(`Купить слот за ${price} очков казны?`)) return;
+        const sent = await fetch(`/api/squads/${id}/slots`, { method: "POST" });
+        const body = await sent.json().catch(() => ({}));
+        if (sent.status === 401) {
+          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          return;
+        }
+        note.textContent = sent.ok ? "Слот куплен. Его можно выдать участнику." : clanErrors[String(body.error)] || "Купить слот не получилось.";
+        if (sent.ok) location.reload();
+      });
+      document.querySelectorAll<HTMLButtonElement>("[data-assign]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const note = document.querySelector("#squad-note")!;
+          const select = document.querySelector<HTMLSelectElement>(`[data-slot-holder="${button.dataset.assign}"]`);
+          const sent = await fetch(`/api/squads/${id}/slots/${button.dataset.assign}/assign`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ steamId: select?.value ?? "" }),
+          });
+          const body = await sent.json().catch(() => ({}));
+          if (sent.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+            return;
+          }
+          note.textContent = sent.ok ? "VIP выдан. Роль Спонсор появится в Discord в течение минуты." : clanErrors[String(body.error)] || "Выдать слот не получилось.";
+          if (sent.ok) location.reload();
+        });
+      });
+      document.querySelectorAll<HTMLButtonElement>("[data-clear-slot]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const note = document.querySelector("#squad-note")!;
+          if (!window.confirm("Снять VIP с этого игрока? Слот снова станет свободным.")) return;
+          const sent = await fetch(`/api/squads/${id}/slots/${button.dataset.clearSlot}/clear`, { method: "POST" });
+          if (sent.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+            return;
+          }
+          note.textContent = sent.ok ? "VIP снят. Роль исчезнет в течение минуты, если другого срока нет." : "Снять слот не получилось.";
+          if (sent.ok) location.reload();
+        });
+      });
+      document.querySelectorAll<HTMLButtonElement>("[data-role]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const note = document.querySelector("#squad-note")!;
+          const deputy = button.dataset.deputy === "1";
+          const sent = await fetch(`/api/squads/${id}/role`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ steamId: button.dataset.role, deputy }),
+          });
+          if (sent.status === 401) {
+            location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+            return;
+          }
+          note.textContent = sent.ok
+            ? deputy ? "Заместитель назначен." : "Заместитель снят."
+            : "Эту должность изменить не получилось.";
+          if (sent.ok) location.reload();
+        });
+      });
+      document.querySelector("#disband")?.addEventListener("click", async () => {
+        const note = document.querySelector("#squad-note")!;
+        if (!window.confirm("Расформировать состав? Сквад, казна и слоты удалятся. Выданный VIP снимется.")) return;
+        const sent = await fetch(`/api/squads/${id}/disband`, { method: "POST" });
+        if (sent.status === 401) {
+          location.href = `/auth/steam?next=${encodeURIComponent(location.pathname + location.search)}`;
+          return;
+        }
+        if (sent.ok) location.href = "/squads";
+        else note.textContent = "Расформировать состав может только лидер.";
       });
       const reportForm = document.querySelector<HTMLFormElement>("#report-form");
       let reportTarget = "";

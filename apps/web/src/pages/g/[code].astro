@@ -154,7 +154,7 @@ export function getStaticPaths() {
       </section>
       <section class="desk" data-desk="shop" hidden>
         <h2>Магазин</h2>
-        <p class="note">Очки берутся из квестов и из сида: игрок на сервере, пока онлайн ниже порога. Минута даёт очки, день ограничен, чтобы простой сид не обгонял оплату. VIP за 300 ₽ и клановый за 200 ₽ в тикете Discord остаются быстрее. Роль Спонсор выдаёт бот, если у игрока привязан Discord.</p>
+        <p class="note">Очки берутся из квестов и из сида: игрок на сервере, пока онлайн ниже порога. Минута даёт очки, день ограничен, чтобы простой сид не обгонял оплату. Очки за квест ещё раз пишутся в казну сквада. Клановый слот не продаётся игроку: его цену и срок берёт казна на странице сквада. Скрытый клановый товар отключает покупку слота. VIP за 300 ₽ и клановый за 200 ₽ в тикете Discord остаются быстрее. Роль Спонсор выдаёт бот, если у игрока привязан Discord.</p>
         <form id="shop-settings" class="guide-form">
           <div class="desk-split">
             <label>Очков за минуту сида<input id="seed-coins" type="number" min="0" max="100" required></label>
@@ -172,7 +172,7 @@ export function getStaticPaths() {
             <label>Цена, очки<input id="shop-price" type="number" min="1" max="1000000" required></label>
             <label>Дней роли<input id="shop-days" type="number" min="0" max="366" value="30"></label>
           </div>
-          <label>Что выдаёт<select id="shop-kind"><option value="vip">VIP, роль Спонсор</option><option value="clanvip">Клановый VIP, роль Спонсор</option><option value="note">Просто записать покупку</option></select></label>
+          <label>Что выдаёт<select id="shop-kind"><option value="vip">VIP, роль Спонсор</option><option value="clanvip">Клановый слот, покупает казна сквада</option><option value="note">Просто записать покупку</option></select></label>
           <label class="check"><input id="shop-hidden" type="checkbox"> Скрыть с сайта</label>
           <div class="row">
             <button class="btn" type="submit">Сохранить товар</button>
@@ -491,7 +491,7 @@ export function getStaticPaths() {
     type ShopProduct = { id: number; title: string; body: string; price: number; kind: string; days: number; hidden: boolean };
     let shopEditing = 0;
     let shopRows: ShopProduct[] = [];
-    const kindName: Record<string, string> = { vip: "VIP", clanvip: "Клановый VIP", note: "Запись" };
+    const kindName: Record<string, string> = { vip: "VIP", clanvip: "Клановый слот", note: "Запись" };
     const shopForm = gate.querySelector<HTMLFormElement>("#shop-form");
     const loadShop = async () => {
       const board = await fetch("/api/admin/shop").then((response) => response.ok ? response.json() : null);

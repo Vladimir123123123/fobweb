@@ -98,6 +98,7 @@ export async function migrate() {
   await ensureColumn("server_combat", "persona", "varchar(80) NULL");
   await ensureColumn("server_combat", "avatar", "varchar(300) NULL");
   await ensureColumn("server_combat", "first_seen", "datetime(3) NULL");
+  await ensureColumn("shop_grants", "until_at", "datetime(3) NULL");
   await sql`UPDATE server_combat SET first_seen = seen_at WHERE first_seen IS NULL`;
   await sql`
     UPDATE server_combat c

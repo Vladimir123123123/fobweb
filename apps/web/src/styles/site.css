@@ -888,6 +888,13 @@ label.check input { width: auto; }
 .mate-actions { display: flex; flex-direction: column; gap: 6px; }
 .mate.lead { border-color: #1e6b34; }
 .mate.lead small { color: var(--green); }
+.mate.deputy { border-color: rgba(239, 170, 24, 0.7); }
+.mate.deputy small { color: #efaa18; }
+.clan-desk { margin: 22px 0; border: 1px solid rgba(239, 170, 24, 0.35); background: #101410; padding: 0 16px 16px; }
+.clan-stats { margin: 0 0 12px; }
+.clan-slots { list-style: none; display: grid; gap: 8px; margin: 12px 0; padding: 0; }
+.clan-slots li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.clan-slots select { background: #0c0e0d; color: inherit; border: 1px solid var(--line); padding: 6px 8px; }
 .mate.live { border-color: rgba(61, 186, 122, 0.7); order: -1; }
 .mate.live small { color: #3dba7a; }
 .activity { margin-top: 22px; border: 1px solid rgba(239, 170, 24, 0.35); background: #101410; }

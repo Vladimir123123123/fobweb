@@ -397,3 +397,27 @@ CREATE TABLE IF NOT EXISTS seed_days (
   last_seen datetime(3) NOT NULL DEFAULT current_timestamp(3),
   PRIMARY KEY (steam_id, day)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS squad_wallets (
+  squad_id bigint NOT NULL PRIMARY KEY,
+  coins int NOT NULL DEFAULT 0,
+  CONSTRAINT wallet_squad FOREIGN KEY (squad_id) REFERENCES squads (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS squad_slots (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  squad_id bigint NOT NULL,
+  until_at datetime(3) NOT NULL,
+  holder_steam varchar(20) NULL,
+  CONSTRAINT slots_squad FOREIGN KEY (squad_id) REFERENCES squads (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS squad_slots_squad ON squad_slots (squad_id, until_at);
+
+CREATE TABLE IF NOT EXISTS shop_revokes (
+  id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  discord_id varchar(32) NOT NULL,
+  until_at datetime(3) NOT NULL,
+  status varchar(12) NOT NULL DEFAULT 'pending',
+  created_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -16,6 +16,7 @@ import { liveServer } from "./server-live.js";
 import { VIP_ROSTER } from "./vip-roster.js";
 import { adminQuestBoard, insertQuest, publicQuests, questInput, removeQuest, saveQuest, startQuest } from "./quests.js";
 import { adminShop, buyProduct, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
+import { assignClanSlot, buyClanSlot, clanView, clearClanSlot, disbandSquad, finishRevoke, officerOf, pendingRevokes, removeMember, setDeputy } from "./clan.js";
 import { weekBoard } from "./week.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
@@ -1482,9 +1483,10 @@ app.get("/api/squads", async (request) => {
     : [];
   const deskRows = steamId
     ? await sql<{ id: number; name: string; tag: string; status: string; about: string; criteria: string; discord_url: string; closed: boolean; logo_path: string | null; banner_path: string | null }[]>`
-      SELECT id, name, tag, status, about, criteria, discord_url, closed, logo_path, banner_path
-      FROM squads
-      WHERE owner_steam_id = ${steamId}
+      SELECT sq.id, sq.name, sq.tag, sq.status, sq.about, sq.criteria, sq.discord_url, sq.closed, sq.logo_path, sq.banner_path
+      FROM squads sq
+      JOIN squad_members m ON m.squad_id = sq.id AND m.steam_id = ${steamId} AND m.status = 'member'
+      WHERE m.role IN ('leader', 'deputy') OR sq.owner_steam_id = ${steamId}
       LIMIT 1
     `
     : [];
@@ -1592,8 +1594,7 @@ app.post("/api/squads/:id/decide", async (request, reply) => {
   const body = asObject(request.body);
   const target = text(body?.steamId, 20);
   if (!steamId || !/^\d{17}$/.test(target) || !body) return reply.code(400).send({ error: "bad_request" });
-  const squad = await sql`SELECT owner_steam_id FROM squads WHERE id = ${id}`;
-  if (!squad.length || squad[0].owner_steam_id !== steamId) return notFound(reply);
+  if (!(await officerOf(id, steamId))) return notFound(reply);
   if (body.accept === true) {
     const member = await sql`SELECT 1 FROM squad_members WHERE steam_id = ${target} AND status = 'member'`;
     if (member.length) return reply.code(400).send({ error: "already" });
@@ -1618,13 +1619,9 @@ app.post("/api/squads/:id/remove", async (request, reply) => {
   const body = asObject(request.body);
   const target = text(body?.steamId, 20);
   if (!steamId || !/^\d{17}$/.test(target) || target === steamId) return reply.code(400).send({ error: "bad_request" });
-  const squad = await sql`SELECT owner_steam_id FROM squads WHERE id = ${id}`;
-  if (!squad.length || squad[0].owner_steam_id !== steamId) return notFound(reply);
-  const removed = await sql`
-    DELETE FROM squad_members
-    WHERE squad_id = ${id} AND steam_id = ${target} AND status = 'member' AND role <> 'leader'
-  `;
-  if (!removed.length) return reply.code(400).send({ error: "gone" });
+  const result = await removeMember(id, steamId, target);
+  if (result.error === "forbidden") return notFound(reply);
+  if (result.error) return reply.code(400).send({ error: result.error });
   return { ok: true };
 });
 
@@ -1644,8 +1641,7 @@ app.post("/api/squads/:id/profile", async (request, reply) => {
   if (name.length < 3 || !/^[A-Z0-9]{2,5}$/.test(tag) || about.length < 20 || criteria.length < 10 || (discordRaw && !discord)) {
     return reply.code(400).send({ error: "bad_request" });
   }
-  const owned = await sql`SELECT id FROM squads WHERE id = ${id} AND owner_steam_id = ${steamId}`;
-  if (!owned.length) return notFound(reply);
+  if (!(await officerOf(id, steamId))) return notFound(reply);
   await sql`
     UPDATE squads
     SET name = ${name}, tag = ${tag}, about = ${about}, criteria = ${criteria}, discord_url = ${discord}, closed = ${closed}
@@ -1667,21 +1663,21 @@ app.get("/api/squads/:id", async (request, reply) => {
     WHERE sq.id = ${id}
   `;
   const squad = rows[0];
-  if (!squad || (squad.status !== "approved" && squad.owner_steam_id !== viewer)) return notFound(reply);
+  const office = viewer && squad ? await officerOf(id, viewer) : null;
+  if (!squad || (squad.status !== "approved" && squad.owner_steam_id !== viewer && !office)) return notFound(reply);
   const members = await sql`
     SELECT m.steam_id, m.role, m.status, u.persona, u.avatar
     FROM squad_members m
     JOIN users u ON u.steam_id = m.steam_id
-    WHERE m.squad_id = ${id} AND (m.status = 'member' OR ${viewer} = ${squad.owner_steam_id})
-    ORDER BY m.role = 'leader' DESC, u.persona
+    WHERE m.squad_id = ${id} AND (m.status = 'member' OR ${office ? 1 : 0} = 1)
+    ORDER BY m.role = 'leader' DESC, m.role = 'deputy' DESC, u.persona
   `;
   const seatRows = viewer
     ? await sql<{ squad_id: number; status: string }[]>`
       SELECT squad_id, status FROM squad_members WHERE steam_id = ${viewer} LIMIT 1
     `
     : [];
-  const leader = viewer === squad.owner_steam_id;
-  const activity = leader
+  const activity = office
     ? await squadActivity(members.filter((member) => member.status === "member").map((member) => String(member.steam_id)))
     : null;
   return {
@@ -1691,10 +1687,68 @@ app.get("/api/squads/:id", async (request, reply) => {
       banner: squad.banner_path ? `/api/media/${squad.banner_path}` : "",
     },
     members,
-    mine: leader,
+    mine: Boolean(office),
+    office: office ?? "",
+    clan: await clanView(id, office),
     seat: seatRows[0] ?? null,
     activity,
   };
+});
+
+app.post("/api/squads/:id/slots", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  if (!steamId || !Number.isInteger(id)) return reply.code(401).send({ error: "steam" });
+  const result = await buyClanSlot(id, steamId);
+  if (result.error === "forbidden") return notFound(reply);
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return clanView(id, "leader");
+});
+
+app.post("/api/squads/:id/slots/:slotId/assign", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  const slotId = Number((request.params as { slotId: string }).slotId);
+  const target = text(asObject(request.body)?.steamId, 20);
+  if (!steamId || !Number.isInteger(id) || !Number.isInteger(slotId)) return reply.code(401).send({ error: "steam" });
+  const result = await assignClanSlot(id, steamId, slotId, target);
+  if (result.error === "forbidden") return notFound(reply);
+  if (result.error === "bad_request") return reply.code(400).send({ error: result.error });
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return clanView(id, "leader");
+});
+
+app.post("/api/squads/:id/slots/:slotId/clear", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  const slotId = Number((request.params as { slotId: string }).slotId);
+  if (!steamId || !Number.isInteger(id) || !Number.isInteger(slotId)) return reply.code(401).send({ error: "steam" });
+  const result = await clearClanSlot(id, steamId, slotId);
+  if (result.error === "forbidden") return notFound(reply);
+  if (result.error) return reply.code(409).send({ error: result.error });
+  return clanView(id, "leader");
+});
+
+app.post("/api/squads/:id/role", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  const body = asObject(request.body);
+  const target = text(body?.steamId, 20);
+  if (!steamId || !Number.isInteger(id) || !body) return reply.code(401).send({ error: "steam" });
+  const result = await setDeputy(id, steamId, target, body.deputy === true);
+  if (result.error === "forbidden") return notFound(reply);
+  if (result.error) return reply.code(400).send({ error: result.error });
+  return { ok: true };
+});
+
+app.post("/api/squads/:id/disband", async (request, reply) => {
+  const steamId = steamIdOf(request);
+  const id = Number((request.params as { id: string }).id);
+  if (!steamId || !Number.isInteger(id)) return reply.code(401).send({ error: "steam" });
+  const result = await disbandSquad(id, steamId);
+  if (result.error === "forbidden") return notFound(reply);
+  if (result.error) return reply.code(400).send({ error: result.error });
+  return { ok: true };
 });
 
 app.post("/api/squads/:id/assets", async (request, reply) => {
@@ -1708,8 +1762,7 @@ app.post("/api/squads/:id/assets", async (request, reply) => {
   if (kind === "banner" && !invite) return reply.code(400).send({ error: "discord" });
   const image = imageFile(text(body.image, 1_800_000));
   if (!image) return reply.code(400).send({ error: "image" });
-  const owned = await sql`SELECT id FROM squads WHERE id = ${id} AND owner_steam_id = ${steamId}`;
-  if (!owned.length) return notFound(reply);
+  if (!(await officerOf(id, steamId))) return notFound(reply);
   const file = saveMedia(image.bytes, image.ext);
   try {
     await sql.begin(async (tx) => {
@@ -1963,6 +2016,18 @@ app.post("/api/bot/shop-grants/ack", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   const id = Number(asObject(request.body)?.id);
   if (!Number.isInteger(id) || id < 1 || !(await finishGrant(id))) return notFound(reply);
+  return { ok: true };
+});
+
+app.get("/api/bot/shop-revokes", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return { revokes: await pendingRevokes() };
+});
+
+app.post("/api/bot/shop-revokes/ack", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const id = Number(asObject(request.body)?.id);
+  if (!Number.isInteger(id) || id < 1 || !(await finishRevoke(id))) return notFound(reply);
   return { ok: true };
 });
 
