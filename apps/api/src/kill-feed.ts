@@ -136,10 +136,10 @@ export async function acceptFeed(body: unknown) {
   for (const row of rows) {
     await sql`
       INSERT IGNORE INTO server_kills (
-        event_id, match_id, killed_at, killer_steam, killer_name, victim_steam, victim_name,
+        event_id, match_id, killed_at, received_at, killer_steam, killer_name, victim_steam, victim_name,
         weapon, meters, headshot, suicide, teamkill
       ) VALUES (
-        ${row.eventId}, ${row.matchId}, ${row.killedAt}, ${row.killerSteam}, ${row.killerName},
+        ${row.eventId}, ${row.matchId}, ${row.killedAt}, ${new Date()}, ${row.killerSteam}, ${row.killerName},
         ${row.victimSteam}, ${row.victimName}, ${row.weapon}, ${row.meters},
         ${row.headshot ? 1 : 0}, ${row.suicide ? 1 : 0}, ${row.teamkill ? 1 : 0}
       )

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { creditClanQuest } from "./clan.js";
 import { sql } from "./db.js";
 
@@ -125,20 +128,86 @@ export function questInput(body: Record<string, unknown> | null): QuestInput | n
   };
 }
 
+const FAMILY_TOKENS: Record<string, string[]> = {
+  AR: ["винтовк", "rifle", "штурмов"],
+  SMG: ["пп", "smg", "пулем"],
+  LMG: ["пулемёт", "пулемет", "lmg"],
+  Shotgun: ["дробовик", "shotgun"],
+  Pistol: ["пистолет", "pistol"],
+  Sniper: ["снайпер", "sniper"],
+  DMR: ["marksman", "dmr", "марксман"],
+};
+
+const NAME_TOKENS: Array<{ tokens: string[]; includes: string[] }> = [
+  { tokens: ["гранат", "grenade"], includes: ["grenade"] },
+  { tokens: ["взрыв", "мина", "mine"], includes: ["mine", "claymore", "c4", "explosive"] },
+];
+
+let weaponFamilies: Map<string, string[]> | null = null;
+let weaponNames: string[] | null = null;
+
+function weaponBook() {
+  if (weaponFamilies && weaponNames) return { families: weaponFamilies, names: weaponNames };
+  const families = new Map<string, string[]>();
+  const names: string[] = [];
+  try {
+    const file = fileURLToPath(new URL("../../web/src/data/catalog.json", import.meta.url));
+    const catalog = JSON.parse(readFileSync(file, "utf8")) as {
+      weapons?: Array<{ name?: string; archetype?: string }>;
+      sidearms?: Array<{ name?: string; archetype?: string }>;
+    };
+    for (const weapon of [...(catalog.weapons ?? []), ...(catalog.sidearms ?? [])]) {
+      const name = String(weapon.name ?? "").trim();
+      const archetype = String(weapon.archetype ?? "");
+      if (!name || !archetype) continue;
+      names.push(name);
+      const bucket = families.get(archetype) ?? [];
+      bucket.push(name);
+      families.set(archetype, bucket);
+    }
+  } catch {
+    families.clear();
+  }
+  weaponFamilies = families;
+  weaponNames = names;
+  return { families, names };
+}
+
 function wordsOf(weapon: string) {
-  return weapon.split(",").map((part) => part.trim().replace(/[%_]/g, "").slice(0, 40)).filter(Boolean).slice(0, 8);
+  const words = weapon.split(",").map((part) => part.trim().replace(/[%_]/g, "").slice(0, 40)).filter(Boolean).slice(0, 8);
+  const { families, names } = weaponBook();
+  const extra = new Set<string>();
+  for (const word of words) {
+    const needle = word.toLowerCase();
+    for (const [archetype, tokens] of Object.entries(FAMILY_TOKENS)) {
+      const hit = tokens.some((token) => needle === token || (token.length >= 4 && needle.includes(token)));
+      if (!hit) continue;
+      for (const name of families.get(archetype) ?? []) extra.add(name);
+    }
+    for (const group of NAME_TOKENS) {
+      const hit = group.tokens.some((token) => needle === token || (token.length >= 4 && needle.includes(token)));
+      if (!hit) continue;
+      for (const name of names) {
+        const label = name.toLowerCase();
+        if (group.includes.some((part) => label.includes(part))) extra.add(name);
+      }
+    }
+  }
+  return [...new Set([...words, ...extra])].slice(0, 48);
 }
 
 function sqlTime(value: unknown) {
   return value instanceof Date ? value : String(value ?? "");
 }
 
+const KILL_AT = "COALESCE(IF(killed_at >= '2024-01-01' AND killed_at < '2036-01-01', killed_at, NULL), received_at)";
+
 async function killCount(steamId: string, since: unknown, until: unknown, rule: { headshot: boolean; minMeters: number; maxMeters: number; weapon: string }) {
   const words = wordsOf(rule.weapon);
   const params: unknown[] = [steamId, sqlTime(since)];
   let extra = "";
   if (until) {
-    extra += " AND killed_at <= ?";
+    extra += ` AND ${KILL_AT} <= ?`;
     params.push(sqlTime(until));
   }
   if (rule.headshot) extra += " AND headshot = 1";
@@ -156,7 +225,9 @@ async function killCount(steamId: string, since: unknown, until: unknown, rule: 
   }
   const rows = await sql.unsafe<Array<{ n: number }>>(
     `SELECT CAST(COUNT(*) AS SIGNED) AS n FROM server_kills
-     WHERE killer_steam = ? AND killed_at >= ? AND suicide = 0 AND teamkill = 0${extra}`,
+     WHERE killer_steam = ?
+       AND ${KILL_AT} >= ?
+       AND suicide = 0 AND teamkill = 0${extra}`,
     params,
   );
   return Number(rows[0]?.n ?? 0);

@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS server_kills (
   meters int NULL,
   headshot tinyint(1) NOT NULL DEFAULT 0,
   suicide tinyint(1) NOT NULL DEFAULT 0,
-  teamkill tinyint(1) NOT NULL DEFAULT 0
+  teamkill tinyint(1) NOT NULL DEFAULT 0,
+  received_at datetime(3) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX IF NOT EXISTS server_kills_killer ON server_kills (killer_steam);
