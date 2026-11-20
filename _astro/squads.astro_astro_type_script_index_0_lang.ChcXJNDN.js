@@ -18,7 +18,7 @@ const l=document.querySelector("#list"),s=document.querySelector("#squad-note"),
               <label>Название<input id="profile-name" maxlength="32" value="${r(t.name)}" /></label>
               <label>Тег<input id="profile-tag" maxlength="5" value="${r(t.tag)}" /></label>
             </div>
-            <label>Описание<textarea id="profile-about" maxlength="700">${r(t.about??"")}</textarea></label>
+            <label>Описание<textarea id="profile-about" maxlength="700" placeholder="Адрес сайта в тексте станет ссылкой">${r(t.about??"")}</textarea></label>
             <label>Критерии набора<textarea id="profile-criteria" maxlength="700">${r(t.criteria??"")}</textarea></label>
             <label>Discord<input id="profile-discord" placeholder="https://discord.gg/..." value="${r(t.discord_url)}" /></label>
             <label class="check"><input id="profile-closed" type="checkbox" ${t.closed?"checked":""}/> Набор закрыт</label>
