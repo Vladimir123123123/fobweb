@@ -26,6 +26,12 @@ import Base from "../layouts/Base.astro";
     xp: number; coins: number; minMeters: number; maxMeters: number; headshot: boolean; weapon: string;
     state: string; progress: number;
   };
+  // Объёмные иконки наград: круг с бликом и свечением, значок внутри
+  const rewardGlyph: Record<string, string> = {
+    xp: `<path d="m6 14 6-6 6 6M6 19l6-6 6 6"/>`,
+    coin: `<circle cx="12" cy="12" r="5.500"/><path d="M12 9v6M10 10.500c.4-.8 1.200-1 2-1s1.800.4 1.800 1.200c0 1.800-3.800 1-3.800 2.800 0 .8.900 1.300 2 1.300s1.700-.3 2-1"/>`,
+  };
+  const reward = (kind: string, value: number, label: string) => `<span class="reward ${kind}"><i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${rewardGlyph[kind] ?? ""}</svg></i><b>${value}</b><small>${label}</small></span>`;
   const rules = (quest: Quest) => {
     const lines = [`${quest.kills} убийств`];
     if (quest.weapon) lines.push(quest.weapon);
@@ -58,15 +64,21 @@ import Base from "../layouts/Base.astro";
             : data.signedIn
               ? `<button class="btn small" data-start="${quest.id}" type="button">Начать</button>`
               : "";
-      return `<article class="quest">
-        <div>
+      const check = `<span class="quest-check" role="img" aria-label="Выполнен"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.500 4.500 4.500L19 7.500"/></svg></span>`;
+      const state = done ? "is-done" : ready ? "is-ready" : active ? "is-active" : "";
+      return `<article class="quest ${state}">
+        <header class="quest-head">
           <h2>${esc(quest.title)}</h2>
-          <p>${esc(quest.body)}</p>
-          <p class="quest-pills"><span class="pill">Идёт</span><span class="pill">${diff[quest.difficulty] || "Средняя"}</span><span class="pill">${repeat[quest.repeat] || "Один раз"}</span></p>
-        </div>
+          ${done ? check : ""}
+        </header>
+        <p class="quest-body">${esc(quest.body)}</p>
+        <p class="quest-pills"><span class="pill">${diff[quest.difficulty] || "Средняя"}</span><span class="pill">${repeat[quest.repeat] || "Один раз"}</span></p>
         <ul>${rules(quest)}</ul>
-        <p><b>${quest.xp} опыта</b><br>${quest.coins} очков</p>
-        <div>${active || done ? `<div class="rank-bar" aria-hidden="true"><span style="width:${width}%"></span></div>` : ""}${action}</div>
+        <div class="rewards">${reward("xp", quest.xp, "опыта")}${reward("coin", quest.coins, "очков")}</div>
+        <div class="quest-foot">
+          <div class="rank-bar${done ? " full" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${done ? 100 : width}"><span style="width:${done ? 100 : width}%"></span></div>
+          ${action}
+        </div>
       </article>`;
     }).join("") || "<p>Сейчас нет запущенных квестов.</p>";
   };
@@ -98,7 +110,7 @@ import Base from "../layouts/Base.astro";
       shopRule.textContent += ` Сегодня с сида: ${Number(data.seedToday) || 0} из ${cap}. Обновление статистики: ${data.statToday ? "уже начислено" : "ещё нет"}.`;
     }
     const products = data.products ?? [];
-    shop.innerHTML = products.map((product) => `<article class="shop-item"><div><h2>${esc(product.title)}</h2><p>${esc(product.body)}</p></div><p><b>${product.price} очков</b>${product.days ? `<br>${product.days} дней` : ""}</p><div>${data.signedIn ? `<button class="btn small" data-buy="${product.id}" data-kind="${esc(product.kind)}" type="button">Купить</button>` : `<a class="btn small" href="/auth/steam?next=/quests">Войти и купить</a>`}</div></article>`).join("") || "<p>В магазине пока пусто.</p>";
+    shop.innerHTML = products.map((product) => `<article class="shop-item"><div><h2>${esc(product.title)}</h2><p>${esc(product.body)}</p></div><div class="rewards">${reward("coin", product.price, "очков")}${product.days ? `<span class="reward days"><b>${product.days}</b><small>дней</small></span>` : ""}</div><div>${data.signedIn ? `<button class="btn small" data-buy="${product.id}" data-kind="${esc(product.kind)}" type="button">Купить</button>` : `<a class="btn small" href="/auth/steam?next=/quests">Войти и купить</a>`}</div></article>`).join("") || "<p>В магазине пока пусто.</p>";
   };
   const loadShop = async () => {
     const response = await fetch("/api/shop");

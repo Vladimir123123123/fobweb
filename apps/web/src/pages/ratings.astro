@@ -140,7 +140,7 @@ import Base from "../layouts/Base.astro";
     podium.innerHTML = ranked ? players.slice(0, 3).map((player, index) => {
       const place = index + 1;
       const name = String(player.persona ?? player.steam_id);
-      return `<a class="pod pod-${place} ${tierOf(place)}" href="/p?id=${player.steam_id}">
+      return `<a class="pod pod-${place} ${tierOf(place)}" href="/p?id=${player.steam_id}" style="--i:${place === 1 ? 0 : place}">
         <em>${place}</em>
         ${face(player)}
         <strong>${esc(name)}</strong>
@@ -157,7 +157,7 @@ import Base from "../layouts/Base.astro";
       return `
       <tr class="${tier}" id="p-${player.steam_id}">
         <td class="place">${place}</td>
-        <td><a class="who ${tier}" href="/p?id=${player.steam_id}">${face(player)}<span class="name">${esc(name)}</span></a></td>
+        <td class="who-cell"><a class="who ${tier}" href="/p?id=${player.steam_id}">${face(player)}<span class="name">${esc(name)}</span></a><a class="go" href="/p?id=${player.steam_id}" tabindex="-1" aria-hidden="true">Профиль</a></td>
         ${stats.map((key, statIndex) => `<td class="${statIndex + 3 === hot ? "hot" : ""}">${statText(player, key)}</td>`).join("")}
         <td>${faction ? esc(faction) : "—"}</td>
       </tr>`;

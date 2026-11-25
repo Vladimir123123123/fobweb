@@ -62,6 +62,7 @@ import Base from "../layouts/Base.astro";
           <span>
             <strong>${esc(member.persona ?? member.steam_id)}</strong>
             <small>${label}</small>
+            <em class="mate-id">ID ${esc(member.steam_id.slice(-6))}</em>
           </span>
         </a>`;
       const activity = data.activity as { days: string[]; rows: Array<{ steamId: string; cells: Array<{ place: number; minutes: number; kills: number } | null> }> } | null;
@@ -72,6 +73,28 @@ import Base from "../layouts/Base.astro";
             <h2>Активность</h2>
             <p class="note">Место в скваде за день, по времени на сервере</p>
           </div>
+          ${(() => {
+            const totals = activity.days.map((day, index) => {
+              let minutes = 0;
+              let kills = 0;
+              let people = 0;
+              for (const row of activity.rows) {
+                const cell = row.cells[index];
+                if (!cell) continue;
+                minutes += cell.minutes;
+                kills += cell.kills;
+                people += 1;
+              }
+              return { day, minutes, kills, people };
+            });
+            const top = Math.max(...totals.map((item) => item.minutes), 1);
+            return `<div class="act-chart" role="img" aria-label="Минуты сквада на сервере по дням">${totals.map((item) => `
+              <div class="act-bar" tabindex="0">
+                <div class="act-tip"><b>${esc(item.day)}</b><span>${item.minutes} мин на сервере</span><span>${item.people} игроков · ${item.kills} убийств</span></div>
+                <div class="act-fill" style="height:${item.minutes ? Math.max(4, Math.round((item.minutes / top) * 100)) : 2}%"></div>
+                <span class="act-day">${esc(item.day.slice(-5))}</span>
+              </div>`).join("")}</div>`;
+          })()}
           <div class="activity-scroll">
             <table>
               <thead><tr><th>Участник</th>${activity.days.map((day) => `<th>${esc(day)}</th>`).join("")}</tr></thead>
@@ -122,7 +145,7 @@ import Base from "../layouts/Base.astro";
         <p class="eyebrow"><a href="/squads">Сквады</a></p>
         <article class="hall${squad.banner ? " has-banner" : ""}">
           <header class="hall-hero">
-            ${squad.banner ? `<div class="hall-banner" style="background-image:url('${esc(squad.banner)}')"></div>` : ""}
+            <div class="hall-banner${squad.banner ? "" : " plain"}"${squad.banner ? ` style="background-image:url('${esc(squad.banner)}')"` : ""}></div>
             <div class="hall-id">
               <div class="hall-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</div>
               <div>
