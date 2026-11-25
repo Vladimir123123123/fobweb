@@ -240,8 +240,25 @@ function nextPath(cookieHeader: string | undefined, fallback: string) {
   return target.startsWith("/") && !target.startsWith("//") ? target : fallback;
 }
 
-function roleLevel(stats: { roles?: Record<string, { level?: unknown }> } | null, name: string) {
-  return whole(stats?.roles?.[name]?.level, 1000) ?? null;
+function roleLevel(stats: { roles?: Record<string, unknown> } | null, name: string) {
+  const raw = stats?.roles?.[name];
+  if (typeof raw === "number" || typeof raw === "string") return whole(raw, 1000);
+  if (raw && typeof raw === "object") return whole((raw as { level?: unknown }).level, 1000);
+  return null;
+}
+
+function unlockCount(value: unknown) {
+  if (value && typeof value === "object") return whole((value as { total?: unknown }).total, 100_000);
+  return whole(value, 100_000);
+}
+
+function careerReset(previous: { wardog_level?: unknown; xp?: unknown }, stats: { wardogLevel?: unknown; careerXp?: unknown }) {
+  const level = whole(stats.wardogLevel, 1000);
+  const xp = whole(stats.careerXp, 50_000_000_000);
+  const prevLevel = Number(previous.wardog_level);
+  const prevXp = Number(previous.xp);
+  if (level == null || xp == null || !Number.isFinite(prevLevel) || !Number.isFinite(prevXp)) return false;
+  return prevXp >= 10_000 && xp < prevXp * 0.5 && level + 15 < prevLevel;
 }
 
 async function saveCareer(steamId: string, stats: {
@@ -264,7 +281,7 @@ async function saveCareer(steamId: string, stats: {
       role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source
     ) VALUES (
       ${steamId}, ${config.season}, ${level}, ${xp}, ${value ?? null},
-      ${whole(stats.cash, 50_000_000_000) ?? null}, ${whole(stats.gold, 1_000_000) ?? null}, ${whole(stats.unlocks, 100_000) ?? null},
+      ${whole(stats.cash, 50_000_000_000) ?? null}, ${whole(stats.gold, 1_000_000) ?? null}, ${unlockCount(stats.unlocks) ?? null},
       ${roleLevel(stats, "assault")}, ${roleLevel(stats, "medic")}, ${roleLevel(stats, "recon")},
       ${roleLevel(stats, "support")}, ${roleLevel(stats, "driver")}, ${roleLevel(stats, "pilot")}, ${source}
     )
@@ -288,7 +305,7 @@ function sameCareer(row: Record<string, unknown>, stats: NonNullable<Parameters<
     && num(row.xp) === xp
     && num(row.cash) === whole(stats.cash, 50_000_000_000)
     && num(row.gold) === whole(stats.gold, 1_000_000)
-    && num(row.unlocks) === whole(stats.unlocks, 100_000)
+    && num(row.unlocks) === unlockCount(stats.unlocks)
     && num(row.role_assault) === roleLevel(stats, "assault")
     && num(row.role_medic) === roleLevel(stats, "medic")
     && num(row.role_recon) === roleLevel(stats, "recon")
@@ -447,7 +464,19 @@ async function storeCareer(steamId: string, stats: Parameters<typeof saveCareer>
   const ready = await attachAccountValue(steamId, stats);
   if (!ready) return { ok: false, unchanged: false };
   const latest = await latestSnapshot(steamId);
+  if (latest) {
+    const roles = { ...(ready.roles ?? {}) };
+    for (const name of ["assault", "medic", "recon", "support", "driver", "pilot"]) {
+      if (roleLevel({ roles }, name) == null && latest[`role_${name}`] != null) roles[name] = Number(latest[`role_${name}`]);
+    }
+    ready.roles = roles;
+    if (whole(ready.accountValue, 50_000_000_000) == null && latest.account_value != null) ready.accountValue = Number(latest.account_value);
+    if (unlockCount(ready.unlocks) == null && latest.unlocks != null) ready.unlocks = Number(latest.unlocks);
+    if (whole(ready.cash, 50_000_000_000) == null && latest.cash != null) ready.cash = Number(latest.cash);
+    if (whole(ready.gold, 1_000_000) == null && latest.gold != null) ready.gold = Number(latest.gold);
+  }
   const nextValue = whole(ready.accountValue, 50_000_000_000);
+  const reset = Boolean(latest && careerReset(latest, ready));
   if (latest && sameCareer(latest, ready)) {
     const prev = latest.account_value == null ? null : Number(latest.account_value);
     if (nextValue != null && prev !== nextValue) {
@@ -463,6 +492,13 @@ async function storeCareer(steamId: string, stats: Parameters<typeof saveCareer>
     return { ok: true, unchanged: nextValue == null || prev === nextValue };
   }
   const saved = await saveCareer(steamId, ready, source, openSession);
+  if (saved && reset) {
+    await sql`
+      DELETE FROM snapshots
+      WHERE steam_id = ${steamId} AND season = ${config.season}
+        AND id < (SELECT id FROM (SELECT MAX(id) AS id FROM snapshots WHERE steam_id = ${steamId} AND season = ${config.season}) AS current_row)
+    `;
+  }
   return { ok: saved, unchanged: false };
 }
 
@@ -525,25 +561,6 @@ async function upsertBotUser(steamId: string, discordId: string, discordName: st
       discord_name = COALESCE(VALUES(discord_name), discord_name),
       last_login_at = NOW()
   `;
-}
-
-async function joinFobSquad(steamId: string) {
-  const squads = await sql<{ id: number }[]>`
-    SELECT id FROM squads
-    WHERE UPPER(tag) = 'FOB' AND status = 'approved'
-    ORDER BY id ASC
-    LIMIT 1
-  `;
-  const squadId = squads[0]?.id;
-  if (!squadId) return false;
-  await sql.begin(async (tx) => {
-    await tx`DELETE FROM squad_members WHERE steam_id = ${steamId}`;
-    await tx`
-      INSERT INTO squad_members (squad_id, steam_id, role, status)
-      VALUES (${squadId}, ${steamId}, 'member', 'member')
-    `;
-  });
-  return true;
 }
 
 async function botPlayerPayload(steamId: string) {
@@ -1143,7 +1160,7 @@ app.get("/api/players/:steamId", async (request, reply) => {
     SELECT created_at, wardog_level, xp, cash, gold, unlocks, account_value,
            role_assault, role_medic, role_recon, role_support, role_driver, role_pilot, source
     FROM snapshots
-    WHERE steam_id = ${steamId}
+    WHERE steam_id = ${steamId} AND season = ${config.season}
     ORDER BY created_at ASC
     LIMIT 60
   `;
@@ -1186,9 +1203,8 @@ app.post("/api/bot/link", async (request, reply) => {
   await upsertBotUser(steamId, discordId, discordName);
   const wantPull = body?.pull !== false;
   const pulled = wantPull ? await ensureCareer(steamId) : false;
-  const joinedFob = await joinFobSquad(steamId);
   const payload = await botPlayerPayload(steamId);
-  return { ok: true, pulled, joinedFob, ...payload };
+  return { ok: true, pulled, ...payload };
 });
 
 app.get("/api/bot/player/:steamId", async (request, reply) => {
@@ -1389,7 +1405,6 @@ app.post("/api/bot/import", async (request, reply) => {
     }
     await upsertBotUser(steamId, discordId, discordName);
     const pulled = wantPull ? await ensureCareer(steamId) : false;
-    await joinFobSquad(steamId);
     const payload = await botPlayerPayload(steamId);
     results.push({ steamId, ok: true, pulled, primaryClass: payload?.primaryClass ?? null });
   }

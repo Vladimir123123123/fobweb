@@ -129,6 +129,9 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const teamRows = await sql<Array<{ n: number }>>`
     SELECT COUNT(*) AS n FROM server_kills WHERE killer_steam = ${steamId} AND teamkill = 1
   `;
+  const deathRows = await sql<Array<{ n: number }>>`
+    SELECT COUNT(*) AS n FROM server_kills WHERE victim_steam = ${steamId}
+  `;
   const historyRows = await sql<Array<Record<string, unknown>>>`
     SELECT ended_at, server_name, map_name, minutes, faction, result, place, field_size,
            kills, deaths, headshots, teamkills, weapon
@@ -178,10 +181,10 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const playedNow = num(row.match_kills) > 0 || num(row.match_deaths) > 0;
   const logged = num(rateRows[0]?.n);
   const matchCount = logged > 0 ? logged : num(finished[0]?.n) + (playedNow ? 1 : 0);
-  const matches = matchCount > 0 ? matchCount : num(row.kills) + num(row.deaths) > 0 ? 1 : null;
+  const kills = hasFeed ? feedKills : num(row.kills);
+  const deaths = num(deathRows[0]?.n) > 0 ? num(deathRows[0]?.n) : num(row.deaths);
+  const matches = matchCount > 0 ? matchCount : kills + deaths > 0 ? 1 : null;
   const best = Math.max(num(finished[0]?.best), num(row.match_kills), num(rateRows[0]?.best));
-  const kills = num(row.kills);
-  const deaths = num(row.deaths);
   const headshots = hasFeed ? num(shots[0]?.headshots) : null;
   const playedSide = String(favoriteRows[0]?.faction || "").trim();
   const seenSide = String(row.faction || "").trim();
@@ -189,7 +192,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   return {
     kills,
     deaths,
-    kd: kills + deaths > 0 ? num(row.kd) : null,
+    kd: kills + deaths > 0 ? Math.round((deaths ? kills / deaths : kills) * 100) / 100 : null,
     place: num(ahead[0]?.n) + 1,
     of: num(totals[0]?.n),
     headshots,

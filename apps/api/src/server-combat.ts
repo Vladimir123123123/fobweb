@@ -300,8 +300,11 @@ export async function ingestCombat(): Promise<number> {
         VALUES (${player.steamId}, ${prior.persona}, ${prior.match_kills}, ${prior.match_deaths}, ${player.faction || null})
       `;
     }
-    const kills = applyMatchDelta(prior?.kills ?? 0, prior?.match_kills ?? 0, player.kills);
-    const deaths = applyMatchDelta(prior?.deaths ?? 0, prior?.match_deaths ?? 0, player.deaths);
+    // Счёт за матч — только для границы матча. Жизнь берётся из киллфида, иначе опрос RCON её раздувает.
+    const matchKills = Number.isFinite(player.kills) && player.kills > 0 ? Math.floor(player.kills) : 0;
+    const matchDeaths = Number.isFinite(player.deaths) && player.deaths > 0 ? Math.floor(player.deaths) : 0;
+    const kills = { lifetime: prior?.kills ?? 0, match: matchKills };
+    const deaths = { lifetime: prior?.deaths ?? 0, match: matchDeaths };
     let persona = player.name || prior?.persona || null;
     let avatar = prior?.avatar ?? null;
     if (!avatar) {
@@ -323,8 +326,40 @@ export async function ingestCombat(): Promise<number> {
         seen_at = now(),
         first_seen = COALESCE(first_seen, VALUES(first_seen))
     `;
-    gained.set(player.steamId, Math.max(0, kills.lifetime - (prior?.kills ?? 0)));
+    gained.set(player.steamId, applyMatchDelta(0, prior?.match_kills ?? 0, player.kills).lifetime);
   }
   await notePresence(players.map((player) => player.steamId), gained);
+  await reconcileCombat(players.map((player) => player.steamId));
   return players.length;
+}
+
+/** Убийства и смерти на сервере — из событий киллфида, не из накопленного счётчика RCON. */
+export async function reconcileCombat(steamIds?: string[]) {
+  const limit = steamIds?.filter((id) => /^\d{17}$/.test(id));
+  const where = limit?.length ? ` AND c.steam_id IN (${limit.map(() => "?").join(", ")})` : "";
+  const params = limit ?? [];
+  await sql.unsafe(
+    `UPDATE server_combat c
+     JOIN (
+       SELECT killer_steam AS steam_id, COUNT(*) AS kills
+       FROM server_kills
+       WHERE suicide = 0 AND killer_steam <> ''
+       GROUP BY killer_steam
+     ) k ON k.steam_id = c.steam_id
+     SET c.kills = k.kills
+     WHERE k.kills > 0${where}`,
+    params,
+  );
+  await sql.unsafe(
+    `UPDATE server_combat c
+     JOIN (
+       SELECT victim_steam AS steam_id, COUNT(*) AS deaths
+       FROM server_kills
+       WHERE victim_steam <> ''
+       GROUP BY victim_steam
+     ) d ON d.steam_id = c.steam_id
+     SET c.deaths = d.deaths
+     WHERE d.deaths > 0${where}`,
+    params,
+  );
 }

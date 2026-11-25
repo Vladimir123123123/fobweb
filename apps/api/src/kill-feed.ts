@@ -40,7 +40,11 @@ function weaponNames() {
 function weaponLabel(cause: string) {
   const known = weaponNames().get(cause);
   if (known) return known;
+  if (/vehicle/i.test(cause) || /\.default$/i.test(cause)) return "Техника";
+  if (/c4/i.test(cause)) return "C4";
+  if (/barrel/i.test(cause)) return "Ствол";
   const tail = cause.split(".").pop() || "";
+  if (/^default$/i.test(tail)) return "Техника";
   return tail.replace(/([a-z])([A-Z])/g, "$1 $2") || "неизвестно";
 }
 
