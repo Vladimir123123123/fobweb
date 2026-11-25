@@ -579,7 +579,24 @@ async function botPlayerPayload(steamId: string) {
   };
 }
 
-const app = Fastify({ logger: { level: "info" }, bodyLimit: 2_000_000 });
+const app = Fastify({
+  logger: { level: "error" },
+  disableRequestLogging: true,
+  bodyLimit: 2_000_000,
+});
+const seenLogs = new Map<string, string>();
+function report(name: string, error?: unknown) {
+  const text = error instanceof Error ? error.message : error ? String(error) : "";
+  if (seenLogs.get(name) === text) return;
+  const failed = Boolean(seenLogs.get(name));
+  seenLogs.set(name, text);
+  if (text) console.error(`FOB API: ${name}: ${text}`);
+  else if (failed) console.log(`FOB API: ${name}: работает`);
+}
+app.addHook("onResponse", async (request, reply) => {
+  if (reply.statusCode < 500) return;
+  report(`${request.method} ${request.url.split("?")[0]}`, new Error(String(reply.statusCode)));
+});
 app.removeContentTypeParser("application/json");
 app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
   try {
@@ -2404,23 +2421,23 @@ setInterval(() => {
   });
 }, 60_000).unref();
 setInterval(() => {
-  refreshCareers().catch((error) => app.log.error(error));
-  refreshPublicCareers().catch((error) => app.log.error(error));
+  refreshCareers().then(() => report("карьера")).catch((error) => report("карьера", error));
+  refreshPublicCareers().then(() => report("карьера")).catch((error) => report("карьера", error));
 }, 15 * 60 * 1000).unref();
 
 await migrate();
 await seedGuides();
 await ensureShop();
-dumpDatabase().catch((error) => app.log.error(error));
+dumpDatabase().catch((error) => report("копия базы", error));
 setInterval(() => {
-  dumpDatabase().catch((error) => app.log.error(error));
+  dumpDatabase().then(() => report("копия базы")).catch((error) => report("копия базы", error));
 }, 24 * 60 * 60 * 1000);
 await app.listen({ port: config.port, host: "0.0.0.0" });
-app.log.info(`API ${config.port}, сезон ${config.season}`);
-const pullCombat = () => ingestCombat().catch((error) => app.log.error(error));
+console.log(`FOB API слушает ${config.port}. Модули: игроки, сквады, квесты, рейтинг, сервер, бой, магазин.`);
+const pullCombat = () => ingestCombat().then(() => report("бой")).catch((error) => report("бой", error));
 pullCombat();
 setInterval(pullCombat, 20_000).unref();
-const pullBans = () => syncBans().catch((error) => app.log.error(error));
+const pullBans = () => syncBans().then(() => report("баны")).catch((error) => report("баны", error));
 pullBans();
 setInterval(pullBans, 60_000).unref();
-refreshPublicCareers().catch((error) => app.log.error(error));
+refreshPublicCareers().then(() => report("карьера")).catch((error) => report("карьера", error));
