@@ -1299,6 +1299,39 @@ app.get("/api/side", async () => {
   return { streams: sideList(row?.streams), vips: mergeVips(sideList(row?.vips)) };
 });
 
+// Виджет Discord для главной: у discord.com нет CORS, поэтому читаем здесь и кэшируем на минуту.
+let discordCache: { at: number; body: Record<string, unknown> } | null = null;
+app.get("/api/discord", async (_request, reply) => {
+  if (discordCache && Date.now() - discordCache.at < 60_000) return discordCache.body;
+  try {
+    const response = await fetch("https://discord.com/api/guilds/1387770606589706312/widget.json", { signal: AbortSignal.timeout(6000) });
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json() as {
+      name?: string;
+      instant_invite?: string;
+      presence_count?: number;
+      channels?: Array<{ name?: string }>;
+      members?: Array<{ username?: string; status?: string; avatar_url?: string }>;
+    };
+    const body = {
+      name: String(data.name || "").slice(0, 80),
+      invite: /^https:\/\/discord\.(com|gg)\//.test(String(data.instant_invite || "")) ? String(data.instant_invite) : "",
+      online: Number(data.presence_count) || (data.members?.length ?? 0),
+      channels: (data.channels ?? []).slice(0, 6).map((row) => String(row.name || "").slice(0, 40)).filter(Boolean),
+      members: (data.members ?? []).slice(0, 24).map((row) => ({
+        name: String(row.username || "").slice(0, 40),
+        status: ["online", "idle", "dnd"].includes(String(row.status)) ? String(row.status) : "online",
+        avatar: /^https:\/\/cdn\.discordapp\.com\//.test(String(row.avatar_url || "")) ? String(row.avatar_url) : "",
+      })),
+    };
+    discordCache = { at: Date.now(), body };
+    return body;
+  } catch {
+    if (discordCache) return discordCache.body;
+    return reply.code(502).send({ error: "discord_unavailable" });
+  }
+});
+
 app.post("/api/bot/side", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   const body = asObject(request.body);

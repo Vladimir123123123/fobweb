@@ -94,21 +94,25 @@ import Base from "../layouts/Base.astro";
     const seated = (data.mine as Array<{ squad_id: number; status: string; role: string }>).find((row) => row.status === "member");
     if (owned || seated) document.querySelector("#create")?.setAttribute("hidden", "");
     else document.querySelector("#create")?.removeAttribute("hidden");
-    const stateName = (status: string) => status === "approved" ? "Одобрено" : status === "rejected" ? "Отклонён" : "На модерации";
-    const stateClass = (status: string) => status === "approved" ? "approved" : status === "rejected" ? "rejected" : "pending";
     type SquadCard = { id: number; name: string; tag: string; status: string; closed: boolean; members: number; owner_name: string | null; logo: string; about: string; criteria: string; discord_url: string };
+    // Зелёный: набор открыт. Красный: набор закрыт или отклонён. Жёлтый: на модерации.
+    const badge = (squad: SquadCard) =>
+      squad.status === "rejected" ? { tone: "rejected", text: "Отклонён" }
+      : squad.status !== "approved" ? { tone: "pending", text: "На модерации" }
+      : squad.closed ? { tone: "closed", text: "Набор закрыт" }
+      : { tone: "approved", text: "Набор открыт" };
     list.innerHTML = (data.squads as SquadCard[]).map((squad) => {
       const leader = owned?.id === squad.id;
       const waitingLogo = leader && owned.pending.some((item) => item.kind === "logo");
       const waitingBanner = leader && owned.pending.some((item) => item.kind === "banner");
       return `
-      <article class="squad-tile panel">
+      <article class="squad-tile">
+        ${squad.logo ? `<img class="squad-bg" src="${esc(squad.logo)}" alt="" loading="lazy" />` : `<span class="squad-bg plain" aria-hidden="true">${esc(squad.tag)}</span>`}
+        <span class="squad-status ${badge(squad).tone}">${badge(squad).text}</span>
         <a class="squad-row" href="/squad?id=${squad.id}">
-          <span class="squad-mark">${squad.logo ? `<img src="${esc(squad.logo)}" alt="" />` : esc(squad.tag)}</span>
           <span class="squad-face">
-            <span class="squad-status ${stateClass(squad.status)}">${stateName(squad.status)}</span>
-            <strong>[${esc(squad.tag)}] ${esc(squad.name)}</strong>
-            <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")}${squad.closed ? " · набор закрыт" : ""}</p>
+            <strong><i>[${esc(squad.tag)}]</i> ${esc(squad.name)}</strong>
+            <p>${squad.members} в составе · ${esc(squad.owner_name ?? "владелец")}</p>
           </span>
         </a>
         <div class="squad-actions">
@@ -143,7 +147,9 @@ import Base from "../layouts/Base.astro";
       </article>`;
     }).join("") || "<p>Сквадов пока нет.</p>";
     list.querySelector<HTMLButtonElement>("[data-edit]")?.addEventListener("click", () => {
-      list.querySelector("#profile-form")?.toggleAttribute("hidden");
+      const form = list.querySelector("#profile-form");
+      form?.toggleAttribute("hidden");
+      form?.closest(".squad-tile")?.classList.toggle("editing", !form.hasAttribute("hidden"));
     });
     list.querySelector("#profile-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();

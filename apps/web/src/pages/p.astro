@@ -53,17 +53,35 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
     const min = Math.min(...values);
     const span = Math.max(max - min, 1);
     const width = 640;
-    const height = 160;
+    const height = 180;
     const step = width / (values.length - 1);
-    const y = (value: number) => 16 + (1 - (value - min) / span) * (height - 36);
-    const line = values.map((value, index) => `${index === 0 ? "M" : "L"}${index * step},${y(value)}`).join(" ");
+    const y = (value: number) => 18 + (1 - (value - min) / span) * (height - 44);
+    const dots = values.map((value, index) => [index * step, y(value)] as const);
+    // Плавная кривая: касательные по соседним точкам (Catmull-Rom → Bezier)
+    let line = `M${dots[0][0]},${dots[0][1]}`;
+    for (let i = 0; i < dots.length - 1; i++) {
+      const p0 = dots[i - 1] ?? dots[i];
+      const p1 = dots[i];
+      const p2 = dots[i + 1];
+      const p3 = dots[i + 2] ?? p2;
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+      const c1y = Math.min(Math.max(p1[1] + (p2[1] - p0[1]) / 6, 0), height);
+      const c2y = Math.min(Math.max(p2[1] - (p3[1] - p1[1]) / 6, 0), height);
+      line += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+    }
     const area = `${line} L${width},${height} L0,${height} Z`;
     const last = values.at(-1) ?? 0;
-    return `<svg class="dossier-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Уровень по снимкам">
-      <defs><linearGradient id="lvl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${stroke}" stop-opacity="0.45"/><stop offset="1" stop-color="${stroke}" stop-opacity="0"/></linearGradient></defs>
-      <path d="${area}" fill="url(#lvl)"></path>
-      <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2.5"></path>
-      <circle cx="${width}" cy="${y(last)}" r="4" fill="${stroke}"></circle>
+    const gid = `lvl${Math.random().toString(36).slice(2, 7)}`;
+    const grid = [0.25, 0.5, 0.75].map((f) => `<line class="grid-line" x1="0" x2="${width}" y1="${(height * f).toFixed(0)}" y2="${(height * f).toFixed(0)}"></line>`).join("");
+    return `<svg class="dossier-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Уровень по снимкам">
+      <defs>
+        <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb703" stop-opacity="0.55"/><stop offset="1" stop-color="#ffb703" stop-opacity="0"/></linearGradient>
+        <filter id="${gid}g" x="-5%" y="-30%" width="110%" height="160%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      ${grid}
+      <path d="${area}" fill="url(#${gid})"></path>
+      <path d="${line}" fill="none" stroke="#ffb703" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" filter="url(#${gid}g)"></path>
     </svg>
     <p class="dossier-axis"><span>${esc(when(points[0]?.created_at))}</span><span>${esc(when(points.at(-1)?.created_at))} · ${num(last)} ур.</span></p>`;
   }
@@ -232,6 +250,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
       root.innerHTML = `
         <article class="dossier"${accent ? ` data-accent="${accent}"` : ""}>
           <header class="dossier-hero${portrait ? " has-op" : ""}">
+            ${user.avatar ? `<img class="dossier-bg" alt="" src="${esc(user.avatar)}" />` : ""}
             <div class="dossier-id">
               <div class="dossier-face">
                 <img class="dossier-avatar" alt="" src="${esc(user.avatar ?? "")}" />
@@ -271,37 +290,36 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
               <p class="eyebrow">Статистика игрока</p>
               <p>Этот сервер, за всё время</p>
             </header>
-            <div class="fight-card-hero">
-              <div>
-                <b>${kdText(combat.kd)}</b>
+            <div class="bento">
+              <div class="tile tile-kd">
                 <span>К/Д</span>
+                <b>${kdText(combat.kd)}</b>
+                <small>${num(combat.kills)} убийств · ${num(combat.deaths)} смертей</small>
+                <em>Место #${num(combat.place)} из ${num(combat.of)}</em>
               </div>
-              <div>
-                <strong>${num(combat.kills)} убийств · ${num(combat.deaths)} смертей</strong>
-                <span>Место #${num(combat.place)} из ${num(combat.of)}</span>
+              <div class="tile tile-win">
+                <i class="tile-ring" style="--p:${Math.max(0, Math.min(100, Number(combat.winrate) || 0))}"></i>
+                <span>Винрейт</span>
+                <b>${combat.winrate == null ? "—" : `${Number(combat.winrate).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`}</b>
               </div>
-            </div>
-            <div class="fight-card-grid">
-              <div><span>Хедшоты</span><b>${combat.headshotPct == null ? "—" : `${Number(combat.headshotPct).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`} <small>${combat.headshots == null ? "" : num(combat.headshots)}</small></b></div>
-              <div><span>Самое дальнее убийство</span><b>${meter(combat.longest, " м")}</b></div>
-              <div><span>Ср. дистанция</span><b>${meter(combat.average, " м")}</b></div>
-              <div><span>Лучший матч</span><b>${combat.bestMatch == null ? "—" : `${num(combat.bestMatch)} убийств`}</b></div>
-              <div><span>Матчи</span><b>${matchTotal ? `${num(matchTotal)} <small>по ${combat.perMatch ?? "—"} убийств каждый</small>` : "—"}</b></div>
-              <div><span>Основная сторона</span><b class="${factionTone(String(combat.faction || ""))}">${esc(String(combat.faction || "").trim()) || "—"}</b></div>
-              <div><span>Убийства своих</span><b>${meter(combat.teamkills)}</b></div>
-              <div><span>Винрейт</span><b>${combat.winrate == null ? "—" : `${Number(combat.winrate).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`}</b></div>
-            </div>
-            <div class="fight-card-rivals">
-              <p class="eyebrow">Соперники</p>
-              <p><span>Заклятый враг</span><b>${rival(combat.enemy)}</b></p>
-              <p><span>Любимая цель</span><b>${rival(combat.target)}</b></p>
+              <div class="tile"><span>Хедшоты</span><b>${combat.headshotPct == null ? "—" : `${Number(combat.headshotPct).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%`}</b><small>${combat.headshots == null ? "" : `${num(combat.headshots)} шт.`}</small></div>
+              <div class="tile"><span>Лучший матч</span><b>${combat.bestMatch == null ? "—" : num(combat.bestMatch)}</b><small>убийств</small></div>
+              <div class="tile"><span>Самое дальнее</span><b>${meter(combat.longest, " м")}</b></div>
+              <div class="tile"><span>Ср. дистанция</span><b>${meter(combat.average, " м")}</b></div>
+              <div class="tile"><span>Матчи</span><b>${matchTotal ? num(matchTotal) : "—"}</b><small>${matchTotal ? `по ${combat.perMatch ?? "—"} убийств` : ""}</small></div>
+              <div class="tile"><span>Основная сторона</span><b class="${factionTone(String(combat.faction || ""))}">${esc(String(combat.faction || "").trim()) || "—"}</b></div>
+              <div class="tile"><span>Убийства своих</span><b>${meter(combat.teamkills)}</b></div>
+              <div class="tile tile-wide">
+                <p><span>Заклятый враг</span><b>${rival(combat.enemy)}</b></p>
+                <p><span>Любимая цель</span><b>${rival(combat.target)}</b></p>
+              </div>
             </div>
             ${weapons.length ? `<div class="fight-card-guns">
               <p class="eyebrow">Оружие</p>
               ${weapons.map((gun) => {
                 const name = String(gun.name || "неизвестно");
                 const icon = gunIcon(name);
-                return `<p><i style="width:${Math.round(((Number(gun.kills) || 0) / topGun) * 100)}%"></i>${icon ? `<img src="/art/${icon}" alt="" />` : ""}<b>${esc(name)}</b><span>${num(gun.kills)} · ${num(gun.headshots)} HS</span></p>`;
+                return `<p class="gun-bar">${icon ? `<img src="/art/${icon}" alt="" />` : `<span class="ico-gap">—</span>`}<span class="gun-body"><b>${esc(name)}</b><i><u style="width:${Math.max(3, Math.round(((Number(gun.kills) || 0) / topGun) * 100))}%"></u></i></span><span class="gun-num"><strong>${num(gun.kills)}</strong> · ${num(gun.headshots)} HS</span></p>`;
               }).join("")}
             </div>` : `<p class="note">Оружие, хедшоты и дистанция появятся со следующими убийствами, которые пришлёт сервер.</p>`}
             ${played ? `<p class="note">${played}</p>` : ""}

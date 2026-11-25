@@ -9,6 +9,7 @@ const season = import.meta.env.GAME_SEASON ?? "03";
     <canvas class="battle" id="battle"></canvas>
   </section>
     <div class="stage-copy">
+      <img class="stage-op" src="/brand/operators/valk.webp" alt="" width="340" height="470" decoding="async" />
       <p class="eyebrow">FOB · сезон {season} · 50 на 50</p>
       <h1>WARDOGS</h1>
       <p class="stage-kicker">Tactical all out warfare</p>
@@ -48,7 +49,18 @@ const season = import.meta.env.GAME_SEASON ?? "03";
           </div>
         </div>
         <aside class="home-side">
-          <iframe class="discord-frame" title="Discord FOB" src="https://discord.com/widget?id=1387770606589706312&theme=dark" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"></iframe>
+          <section class="discord-card" id="discord-card" aria-label="Discord сервера">
+            <div class="discord-head">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A18.6 18.6 0 0 0 15.7 3l-.2.4a17 17 0 0 1 4 1.9 15.5 15.5 0 0 0-13.9 0 17 17 0 0 1 4-1.9L9.4 3a18.6 18.6 0 0 0-4.7 1.4C1.7 8.8.9 13.1 1.300 17.3a18.700 18.700 0 0 0 5.700 2.900l1.200-2a12 12 0 0 1-1.900-.9l.5-.4a13.300 13.300 0 0 0 11.400 0l.5.4c-.6.4-1.200.7-1.900.9l1.200 2a18.700 18.700 0 0 0 5.700-2.900c.5-4.900-.8-9.100-3.400-12.900ZM8.500 14.700c-1.100 0-2-1-2-2.200s.9-2.200 2-2.200 2 1 2 2.200-.9 2.200-2 2.200Zm7 0c-1.100 0-2-1-2-2.200s.9-2.200 2-2.200 2 1 2 2.200-.9 2.200-2 2.200Z"/></svg>
+              <div>
+                <strong id="discord-name">Discord FOB</strong>
+                <small id="discord-online">сообщество</small>
+              </div>
+            </div>
+            <ul class="discord-members" id="discord-members" hidden></ul>
+            <ul class="discord-room" id="discord-room" hidden></ul>
+            <a class="btn" id="discord-join" href="https://discord.com/invite/yj424ee6" target="_blank" rel="noopener">Войти в Discord</a>
+          </section>
           <section class="vip-card">
             <p class="eyebrow">Купили VIP</p>
             <div id="vip-list"><p class="note">Пока пусто.</p></div>
@@ -363,7 +375,8 @@ const season = import.meta.env.GAME_SEASON ?? "03";
           const steam = String(row.steamId || "");
           const label = escSide(String(row.name || "Игрок"));
           const who = /^\d{17}$/.test(steam) ? `<a href="/p?id=${steam}">${label}</a>` : label;
-          return `<p class="vip-row"><span>${who}</span><b>${kind} · ${when}</b></p>`;
+          const crown = `<svg class="crown" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 7l4.500 4L12 4l4.500 7L21 7l-2 12H5L3 7Zm2.800 14h12.400v2H5.800v-2Z"/></svg>`;
+          return `<p class="vip-row${row.kind === "clanvip" ? " clan" : ""}">${crown}<span>${who}</span><b>${kind} · ${when}</b></p>`;
         }).join("")
         : `<p class="note">Пока пусто.</p>`;
     };
@@ -396,9 +409,36 @@ const season = import.meta.env.GAME_SEASON ?? "03";
         // блоки остаются с пустой подписью
       }
     };
+    const pullDiscord = async () => {
+      try {
+        const response = await fetch("/api/discord");
+        if (!response.ok) return;
+        const data = await response.json() as { name?: string; invite?: string; online?: number; channels?: string[]; members?: Array<{ name: string; status: string; avatar: string }> };
+        const name = document.querySelector("#discord-name");
+        const online = document.querySelector("#discord-online");
+        const members = document.querySelector<HTMLElement>("#discord-members");
+        const room = document.querySelector<HTMLElement>("#discord-room");
+        const join = document.querySelector<HTMLAnchorElement>("#discord-join");
+        if (name && data.name) name.textContent = data.name;
+        if (online) online.textContent = `${Number(data.online) || 0} онлайн`;
+        if (join && data.invite) join.href = data.invite;
+        if (members && data.members?.length) {
+          members.innerHTML = data.members.map((row) => `<li data-s="${escSide(row.status)}" title="${escSide(row.name)}">${row.avatar ? `<img src="${escSide(row.avatar)}" alt="" width="30" height="30" loading="lazy" />` : ""}</li>`).join("");
+          members.hidden = false;
+        }
+        if (room && data.channels?.length) {
+          room.innerHTML = data.channels.map((row) => `<li>${escSide(row)}</li>`).join("");
+          room.hidden = false;
+        }
+      } catch {
+        // остаётся карточка со ссылкой на приглашение
+      }
+    };
     pullServer();
     pullSide();
+    pullDiscord();
     setInterval(pullServer, 10000);
     setInterval(pullSide, 60000);
+    setInterval(pullDiscord, 120000);
   </script>
 </Base>

@@ -40,6 +40,26 @@ export function getStaticPaths() {
     const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
     const queue = (data.assets ?? []).length + (data.reports ?? []).length + data.squads.filter((squad: { status: string }) => squad.status !== "approved" && squad.status !== "rejected").length;
     const meter = (rows: Array<{ label: string; count: number }>) => `<div class="desk-meter">${rows.map((row) => `<p><span>${esc(row.label)}</span><b>${row.count}</b></p>`).join("") || "<p><span>Пока пусто</span><b>0</b></p>"}</div>`;
+    const svg = (path: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+    const icons = {
+      users: svg(`<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.2 2.7-5.500 6-5.500s6 2.300 6 5.500"/><circle cx="17" cy="9" r="2.400"/><path d="M17 14c2.400 0 4 1.700 4 4.500"/>`),
+      eye: svg(`<path d="M2 12s3.600-6.500 10-6.500S22 12 22 12s-3.600 6.500-10 6.500S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>`),
+      chat: svg(`<path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8.500 10h7"/>`),
+      link: svg(`<path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1"/><path d="M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/>`),
+    };
+    // Столбцы активности: скруглённые, с градиентом; высота от максимума за период.
+    const bars = (rows: Array<{ day: string; count: number }>) => {
+      if (!rows.length) return `<p class="note">Просмотров за две недели пока нет.</p>`;
+      const top = Math.max(...rows.map((row) => row.count), 1);
+      return `<div class="activity-chart"><div class="bars" role="img" aria-label="Просмотры по дням">${rows.map((row) => `<div class="bar" title="${esc(row.day)}: ${row.count}"><span class="bar-value">${row.count}</span><div class="bar-track"><div class="bar-fill" style="height:${Math.max(3, Math.round((row.count / top) * 100))}%"></div></div><span class="bar-day">${esc(row.day.slice(5).split("-").reverse().join("."))}</span></div>`).join("")}</div></div>`;
+    };
+    // Облако тегов: размер пилюли растёт с частотой запроса.
+    const cloud = (hits: Array<{ engine: string; query: string; count: number }>, tags: string[]) => {
+      const top = Math.max(...hits.map((row) => row.count), 1);
+      const hot = hits.map((row) => `<span style="--w:${1 + Math.round((row.count / top) * 4)}">${esc(`${row.query || "без текста"}`)}<sup>${row.count}</sup></span>`);
+      const quiet = tags.map((tag) => `<span style="--w:0;opacity:.7">${esc(tag)}</span>`);
+      return `<div class="tag-cloud">${[...hot, ...quiet].join("") || "<span>Пока пусто</span>"}</div>`;
+    };
     gate.innerHTML = `
       <h1>Сводка</h1>
       <nav class="desk-nav" id="desk-nav">
@@ -54,20 +74,19 @@ export function getStaticPaths() {
       </nav>
       <section class="desk" data-desk="home">
         <div class="stats">
-          <div class="stat"><b>${data.liveCis}</b><span>Живые профили СНГ, 7 дней</span></div>
-          <div class="stat"><b>${data.views7d}</b><span>Просмотры, 7 дней</span></div>
-          <div class="stat"><b>${data.discordClicks7d}</b><span>Клики в Discord, 7 дней</span></div>
-          <div class="stat"><b>${data.shares7d}</b><span>Ссылки сборок, 7 дней</span></div>
+          <div class="stat"><span class="stat-icon">${icons.users}</span><b>${data.liveCis}</b><span>Живые профили СНГ, 7 дней</span></div>
+          <div class="stat"><span class="stat-icon">${icons.eye}</span><b>${data.views7d}</b><span>Просмотры, 7 дней</span></div>
+          <div class="stat"><span class="stat-icon">${icons.chat}</span><b>${data.discordClicks7d}</b><span>Клики в Discord, 7 дней</span></div>
+          <div class="stat"><span class="stat-icon">${icons.link}</span><b>${data.shares7d}</b><span>Ссылки сборок, 7 дней</span></div>
         </div>
         <p class="note">Входы за 7 дней: ${data.logins7d}. Клики по баннерам сквадов: ${data.squadBannerClicks7d ?? 0}. Сессии синка: живые ${count("active")}, погасшие ${count("expired")}.</p>
         <h2>Откуда пришли</h2>
         ${meter(data.sources.map((row: { source: string; count: number }) => ({ label: row.source, count: row.count })))}
         <h2>По дням</h2>
-        ${meter(data.days.map((row: { day: string; count: number }) => ({ label: row.day, count: row.count })))}
-        <h2>Запросы в поиске</h2>
-        <p class="note">Страницы подписаны под эти формулировки. Ниже — слова, которые поисковик передал вместе с переходом. Google часто их не отдаёт.</p>
-        <p class="tags">${(data.searchTags ?? []).map((tag: string) => `<span>${esc(tag)}</span>`).join("")}</p>
-        ${meter((data.searchHits ?? []).map((row: { engine: string; query: string; count: number }) => ({ label: `${row.engine ? row.engine + " · " : ""}${row.query || "без текста"}`, count: row.count })))}
+        ${bars(data.days)}
+        <h2>Поисковые запросы</h2>
+        <p class="note">Крупнее — чаще. Серые — формулировки, под которые подписаны страницы. Яркие — слова, которые поисковик передал вместе с переходом. Google часто их не отдаёт.</p>
+        ${cloud(data.searchHits ?? [], data.searchTags ?? [])}
       </section>
       <section class="desk" data-desk="guides" hidden>
         <h2>Гайды</h2>
