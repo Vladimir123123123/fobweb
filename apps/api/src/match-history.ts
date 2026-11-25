@@ -172,7 +172,8 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
         best = count;
       }
     }
-    const result = matchResult(person.faction, winner, person.left);
+    const crowd = field > 100;
+    const result = crowd ? "" : matchResult(person.faction, winner, person.left);
     const from = endedAt ? new Date(endedAt.getTime() - 15 * 60 * 1000) : null;
     const to = endedAt ? new Date(endedAt.getTime() + 15 * 60 * 1000) : null;
     if (from && to) {

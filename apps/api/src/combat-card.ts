@@ -96,8 +96,8 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     sql<Array<{ kills: number; headshots: number | null; longest: number | null; average: number | null }>>`
       SELECT COUNT(*) AS kills,
              SUM(headshot) AS headshots,
-             MAX(meters) AS longest,
-             ROUND(AVG(meters)) AS average
+             MAX(CASE WHEN meters BETWEEN 1 AND 300 THEN meters END) AS longest,
+             ROUND(AVG(CASE WHEN meters BETWEEN 1 AND 300 THEN meters END)) AS average
       FROM server_kills
       WHERE killer_steam = ${steamId} AND suicide = 0
     `,
@@ -136,7 +136,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     SELECT ended_at, server_name, map_name, minutes, faction, result, place, field_size,
            kills, deaths, headshots, teamkills, weapon
     FROM played_matches
-    WHERE steam_id = ${steamId} AND (map_name <> '' OR result <> '')
+    WHERE steam_id = ${steamId} AND field_size BETWEEN 2 AND 100 AND (map_name <> '' OR result <> '')
     ORDER BY ended_at DESC
     LIMIT 40
   `;
@@ -144,7 +144,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     SELECT SUM(result = 'win') AS wins, SUM(result IN ('win', 'loss')) AS decided,
            COUNT(*) AS n, MAX(kills) AS best
     FROM played_matches
-    WHERE steam_id = ${steamId} AND (map_name <> '' OR result <> '')
+    WHERE steam_id = ${steamId} AND field_size BETWEEN 2 AND 100 AND (map_name <> '' OR result <> '')
   `;
   const history = historyRows.map((item) => {
     const kills = num(item.kills);
@@ -169,7 +169,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const favoriteRows = await sql<Array<{ faction: string }>>`
     SELECT faction
     FROM played_matches
-    WHERE steam_id = ${steamId} AND faction <> '' AND (map_name <> '' OR result <> '')
+    WHERE steam_id = ${steamId} AND faction <> '' AND field_size BETWEEN 2 AND 100 AND (map_name <> '' OR result <> '')
     GROUP BY faction
     ORDER BY COUNT(*) DESC, MAX(ended_at) DESC
     LIMIT 1
@@ -180,11 +180,12 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const hasFeed = feedKills > 0;
   const playedNow = num(row.match_kills) > 0 || num(row.match_deaths) > 0;
   const logged = num(rateRows[0]?.n);
-  const matchCount = logged > 0 ? logged : num(finished[0]?.n) + (playedNow ? 1 : 0);
+  const rounds = num(finished[0]?.n);
+  const matchCount = rounds > 0 ? rounds : logged;
   const kills = hasFeed ? feedKills : num(row.kills);
   const deaths = num(deathRows[0]?.n) > 0 ? num(deathRows[0]?.n) : num(row.deaths);
-  const matches = matchCount > 0 ? matchCount : kills + deaths > 0 ? 1 : null;
-  const best = Math.max(num(finished[0]?.best), num(row.match_kills), num(rateRows[0]?.best));
+  const matches = matchCount > 0 ? matchCount + (playedNow && rounds > 0 ? 1 : 0) : kills + deaths > 0 ? 1 : null;
+  const best = Math.max(num(finished[0]?.best), num(row.match_kills));
   const headshots = hasFeed ? num(shots[0]?.headshots) : null;
   const playedSide = String(favoriteRows[0]?.faction || "").trim();
   const seenSide = String(row.faction || "").trim();

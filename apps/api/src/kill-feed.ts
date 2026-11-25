@@ -48,10 +48,13 @@ function weaponLabel(cause: string) {
   return tail.replace(/([a-z])([A-Z])/g, "$1 $2") || "неизвестно";
 }
 
+/** Дальше 300 м в фиде почти всегда мина или сбой координат, не выстрел. */
 function metersOf(distance: unknown) {
   const value = Number(distance);
   if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.max(1, Math.round(value / 100));
+  const meters = Math.round(value / 100);
+  if (meters < 1 || meters > 300) return null;
+  return meters;
 }
 
 function tagged(tags: unknown, needle: string) {
