@@ -54,6 +54,14 @@ const jsonLd = JSON.stringify({
     <script type="application/ld+json" is:inline set:html={jsonLd}></script>
   </head>
   <body class:list={{ fit, wide }} data-metrika={metrika}>
+    <div class="bg" aria-hidden="true">
+      <div class="bg-l bg-map"><img src="/brand/maps/bakurani.webp" alt="" decoding="async" /></div>
+      <div class="bg-l bg-grid"><i></i></div>
+      <div class="bg-l bg-radar"><b class="sweep"></b><i></i><i></i><i></i></div>
+      <div class="bg-l bg-dust"><canvas></canvas></div>
+      <div class="bg-l bg-glow"><i></i><i></i><i></i></div>
+      <div class="bg-shade"></div>
+    </div>
     <header class="topbar">
       <div class="wrap top">
         <a class="brand" href="/"><img class="logo" src="/brand/logo.svg" alt="" /><span>WARDOGS<small>FOB · СНГ</small></span></a>
@@ -88,6 +96,7 @@ const jsonLd = JSON.stringify({
     </div>
     <script>
       import "../scripts/site.ts";
+      import "../scripts/backdrop.ts";
     </script>
   </body>
 </html>
