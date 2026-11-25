@@ -118,6 +118,37 @@ export async function migrate() {
     SELECT steam_id, CONCAT('legacy-', id), ended_at, COALESCE(faction, ''), kills, deaths
     FROM server_matches
   `;
+  // «White» и прочее из игры — не сторона. Чистим и подставляем настоящую, где она известна по сыгранным матчам.
+  const notSide = "NOT (LOWER(faction) REGEXP 'lone|star|valk|mant')";
+  await sql.unsafe(`UPDATE server_combat SET faction = NULL WHERE faction IS NOT NULL AND ${notSide}`);
+  await sql.unsafe(`UPDATE server_matches SET faction = NULL WHERE faction IS NOT NULL AND ${notSide}`);
+  await sql.unsafe(`UPDATE played_matches SET faction = '' WHERE faction <> '' AND ${notSide}`);
+  await sql.unsafe(`UPDATE match_presence SET faction = '' WHERE faction <> '' AND ${notSide}`);
+  await sql`
+    UPDATE server_combat c
+    JOIN (
+      SELECT steam_id, SUBSTRING_INDEX(GROUP_CONCAT(faction ORDER BY n DESC), ',', 1) AS faction
+      FROM (
+        SELECT steam_id, faction, COUNT(*) AS n
+        FROM played_matches
+        WHERE faction <> ''
+        GROUP BY steam_id, faction
+      ) t
+      GROUP BY steam_id
+    ) f ON f.steam_id = c.steam_id
+    SET c.faction = f.faction
+    WHERE c.faction IS NULL
+  `;
+  // Один раз: матчи, где «проиграли» все, значит победителя не распознали. Результат стираем, винрейт не врёт.
+  const repaired = await sql`INSERT IGNORE INTO feed_keys (name, value) VALUES ('fix-no-winner-1', '1')`;
+  if (repaired.length) {
+    await sql`
+      UPDATE played_matches
+      SET result = ''
+      WHERE result = 'loss' AND match_key NOT LIKE 'legacy-%'
+        AND match_key NOT IN (SELECT match_key FROM (SELECT DISTINCT match_key FROM played_matches WHERE result = 'win') w)
+    `;
+  }
   // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
   await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
   await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;

@@ -977,3 +977,9 @@ main > :not(.home-hero) {
   mask-composite: intersect;
 }
 .stage::after { background: linear-gradient(90deg, rgba(4, 4, 4, 0.78) 0%, rgba(4, 4, 4, 0.5) 38%, rgba(4, 4, 4, 0.08) 100%); }
+/* Винрейт: последние 10 игр точками, старые слева */
+.tile-win small { color: var(--muted); font-size: 12px; }
+.form { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+.form i { width: 14px; height: 14px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); }
+.form i.win { background: var(--green); box-shadow: 0 0 8px rgba(47, 211, 107, 0.5); }
+.form i.loss { background: var(--red); box-shadow: 0 0 8px rgba(255, 77, 77, 0.4); }

@@ -153,7 +153,8 @@ import Base from "../layouts/Base.astro";
       const name = String(player.persona ?? player.steam_id);
       const tier = ranked ? tierOf(place) : "";
       const stats = ["level", "xp", "value", "cash", "gold", "unlocks", "assault", "medic", "recon", "support", "driver", "pilot", "kills", "deaths", "kd"];
-      const faction = String(player.server_faction ?? "").trim();
+      const rawFaction = String(player.server_faction ?? "").trim();
+      const faction = /lone|star|valk|mant/i.test(rawFaction) ? rawFaction : "";
       return `
       <tr class="${tier}" id="p-${player.steam_id}">
         <td class="place">${place}</td>

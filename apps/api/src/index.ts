@@ -9,6 +9,7 @@ import { clearSession, cookieString, createSession, readSession, writeCookies } 
 import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
 import { combatCard } from "./combat-card.js";
+import { feedSamples } from "./match-history.js";
 import { bansFromPayload, punishmentsFor, rememberBans, syncBans } from "./punishments.js";
 import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./server-combat.js";
@@ -1382,6 +1383,11 @@ app.post("/api/bot/bans", async (request, reply) => {
   const bans = bansFromPayload(body.bans).slice(0, 500);
   await rememberBans(bans);
   return { ok: true, bans: bans.length };
+});
+
+app.get("/api/bot/feed-samples", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return { samples: await feedSamples() };
 });
 
 app.get("/api/bot/week", async (request, reply) => {

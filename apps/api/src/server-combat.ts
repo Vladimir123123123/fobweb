@@ -3,6 +3,9 @@ import { sql } from "./db.js";
 import { creditSeed } from "./shop.js";
 import { recentKills } from "./kill-feed.js";
 import { rememberRoster } from "./roster-cache.js";
+import { noteScores, trackRoster } from "./match-history.js";
+import { cleanSide } from "./sides.js";
+import { liveServer } from "./server-live.js";
 import { steamProfile, wardogsHours } from "./steam.js";
 
 const HOT_KILLS = 15;
@@ -112,6 +115,8 @@ export function playingFactions(factions: Array<{ name: string; score: number }>
 export function rememberLive(factions: Array<{ name: string; score: number }>, players: RosterPlayer[]) {
   pushedRoster = { at: Date.now(), factions, players };
   rememberRoster(players);
+  noteScores(factions);
+  void trackRoster(players).catch(() => undefined);
   noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
   if (!config.rconHost || !config.rconPassword) void notePresence(players.map((player) => player.steamId));
@@ -286,6 +291,8 @@ export async function ingestCombat(): Promise<number> {
   const players = await roster();
   lastRoster = players;
   rememberRoster(players);
+  void trackRoster(players).catch(() => undefined);
+  void liveServer().then((live) => { if (live) noteScores(live.factions); }).catch(() => undefined);
   noteKills(players);
   void refreshHours(players.map((player) => player.steamId));
   const gained = new Map<string, number>();
@@ -297,7 +304,7 @@ export async function ingestCombat(): Promise<number> {
     if (prior && (player.kills < prior.match_kills || player.deaths < prior.match_deaths) && (prior.match_kills > 0 || prior.match_deaths > 0)) {
       await sql`
         INSERT INTO server_matches (steam_id, persona, kills, deaths, faction)
-        VALUES (${player.steamId}, ${prior.persona}, ${prior.match_kills}, ${prior.match_deaths}, ${player.faction || null})
+        VALUES (${player.steamId}, ${prior.persona}, ${prior.match_kills}, ${prior.match_deaths}, ${cleanSide(player.faction) || null})
       `;
     }
     // Счёт за матч — только для границы матча. Жизнь берётся из киллфида, иначе опрос RCON её раздувает.
@@ -314,7 +321,7 @@ export async function ingestCombat(): Promise<number> {
     }
     await sql`
       INSERT INTO server_combat (steam_id, persona, avatar, kills, deaths, match_kills, match_deaths, faction, seen_at, first_seen)
-      VALUES (${player.steamId}, ${persona}, ${avatar}, ${kills.lifetime}, ${deaths.lifetime}, ${kills.match}, ${deaths.match}, ${player.faction || null}, now(), now())
+      VALUES (${player.steamId}, ${persona}, ${avatar}, ${kills.lifetime}, ${deaths.lifetime}, ${kills.match}, ${deaths.match}, ${cleanSide(player.faction) || null}, now(), now())
       ON DUPLICATE KEY UPDATE
         persona = COALESCE(VALUES(persona), persona),
         avatar = COALESCE(VALUES(avatar), avatar),
@@ -322,7 +329,7 @@ export async function ingestCombat(): Promise<number> {
         deaths = VALUES(deaths),
         match_kills = VALUES(match_kills),
         match_deaths = VALUES(match_deaths),
-        faction = VALUES(faction),
+        faction = COALESCE(VALUES(faction), faction),
         seen_at = now(),
         first_seen = COALESCE(first_seen, VALUES(first_seen))
     `;

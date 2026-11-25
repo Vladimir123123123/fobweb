@@ -302,6 +302,12 @@ CREATE TABLE IF NOT EXISTS feed_keys (
   value varchar(80) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS feed_samples (
+  kind varchar(40) PRIMARY KEY,
+  body text NOT NULL,
+  seen_at datetime(3) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 ALTER TABLE squads ADD COLUMN IF NOT EXISTS about varchar(700) NOT NULL DEFAULT '';
 ALTER TABLE squads ADD COLUMN IF NOT EXISTS criteria varchar(700) NOT NULL DEFAULT '';
 
