@@ -660,6 +660,35 @@ app.post("/api/ingest/events", async (request, reply) => {
   return reply.code(204).send();
 });
 
+let joinLinkCache: { at: number; link: string } | null = null;
+
+app.get("/api/server/join-link", async (_request, reply) => {
+  reply.header("Cache-Control", "no-store");
+  if (joinLinkCache && Date.now() - joinLinkCache.at < 15_000) return { link: joinLinkCache.link };
+  try {
+    const response = await fetch("https://wardogserverlist.com/discord/api/join", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://wardogserverlist.com",
+        Referer: "https://wardogserverlist.com/server",
+        "User-Agent": "fob-wd.ru join",
+      },
+      body: JSON.stringify({ key: `id|${config.browserServerId}`, from: "site" }),
+      signal: AbortSignal.timeout(6000),
+    });
+    const data = (await response.json().catch(() => ({}))) as { link?: string };
+    const link = String(data.link ?? "");
+    if (!response.ok || !/^steam:\/\/joinlobby\/\d+\/\d+$/.test(link)) {
+      return reply.code(response.status === 429 ? 429 : 503).send({ error: "unavailable" });
+    }
+    joinLinkCache = { at: Date.now(), link };
+    return { link };
+  } catch {
+    return reply.code(503).send({ error: "unavailable" });
+  }
+});
+
 app.get("/api/server", async (_request, reply) => {
   try {
     const server = await liveServer();
