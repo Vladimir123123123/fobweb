@@ -270,10 +270,12 @@ export async function removeProduct(id: number) {
 }
 
 export async function pendingGrants() {
-  const rows = await sql<Array<{ id: number; discord_id: string; kind: string; days: number; title: string; until_at: Date | string | null }>>`
-    SELECT g.id, g.discord_id, g.kind, g.days, g.until_at, o.title
+  const rows = await sql<Array<{ id: number; discord_id: string; kind: string; days: number; title: string; until_at: Date | string | null; squad_tag: string | null }>>`
+    SELECT g.id, g.discord_id, g.kind, g.days, g.until_at, o.title, s.tag AS squad_tag
     FROM shop_grants g
     JOIN shop_orders o ON o.id = g.order_id
+    LEFT JOIN squad_members m ON m.steam_id = g.steam_id AND m.status = 'member'
+    LEFT JOIN squads s ON s.id = m.squad_id AND s.status = 'approved'
     WHERE g.status = 'pending'
     ORDER BY g.id
     LIMIT 20
@@ -286,6 +288,7 @@ export async function pendingGrants() {
       kind: row.kind === "clanvip" ? "clanvip" : "vip",
       days: Number(row.days) || 0,
       title: row.title,
+      squadTag: row.squad_tag ? String(row.squad_tag) : "",
       until: until && !Number.isNaN(until.getTime()) ? until.toISOString() : "",
     };
   });
