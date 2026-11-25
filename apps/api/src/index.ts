@@ -468,7 +468,7 @@ async function storeCareer(steamId: string, stats: Parameters<typeof saveCareer>
   if (latest) {
     const roles = { ...(ready.roles ?? {}) };
     for (const name of ["assault", "medic", "recon", "support", "driver", "pilot"]) {
-      if (roleLevel({ roles }, name) == null && latest[`role_${name}`] != null) roles[name] = Number(latest[`role_${name}`]);
+      if (roleLevel({ roles }, name) == null && latest[`role_${name}`] != null) roles[name] = { level: Number(latest[`role_${name}`]) };
     }
     ready.roles = roles;
     if (whole(ready.accountValue, 50_000_000_000) == null && latest.account_value != null) ready.accountValue = Number(latest.account_value);
