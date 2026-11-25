@@ -418,8 +418,8 @@ export async function botQuestBoard() {
 }
 
 export async function pendingQuestAlerts() {
-  const rows = await sql<Array<{ id: number; title: string; name: string }>>`
-    SELECT r.id, q.title, COALESCE(NULLIF(u.persona, ''), r.steam_id) AS name
+  const rows = await sql<Array<{ id: number; title: string; name: string; steam_id: string }>>`
+    SELECT r.id, q.title, r.steam_id, COALESCE(NULLIF(u.persona, ''), r.steam_id) AS name
     FROM quest_runs r
     JOIN quests q ON q.id = r.quest_id
     LEFT JOIN users u ON u.steam_id = r.steam_id
@@ -430,6 +430,7 @@ export async function pendingQuestAlerts() {
   return {
     alerts: rows.map((row) => ({
       id: Number(row.id),
+      steamId: String(row.steam_id || ""),
       title: String(row.title || "").slice(0, 80),
       name: String(row.name || "").slice(0, 40),
     })),
