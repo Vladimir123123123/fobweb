@@ -1414,6 +1414,34 @@ app.post("/api/bot/bans", async (request, reply) => {
   return { ok: true, bans: bans.length };
 });
 
+/** Кто из текущего ростера сидит и может получать очки: Discord привязан и хотя бы раз обновлял стату. */
+app.post("/api/bot/seeders", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const body = request.body as { steamIds?: unknown } | null;
+  const ids = Array.isArray(body?.steamIds)
+    ? [...new Set(body.steamIds.map((item) => text(item, 20)).filter((id) => /^\d{17}$/.test(id)))].slice(0, 200)
+    : [];
+  if (!ids.length) return { players: [] };
+  const marks = ids.map(() => "?").join(", ");
+  const rows = await sql.unsafe<Array<{ steam_id: string; persona: string | null; discord_id: string }>>(
+    `SELECT u.steam_id, u.persona, u.discord_id
+     FROM users u
+     WHERE u.steam_id IN (${marks})
+       AND u.discord_id IS NOT NULL AND u.discord_id <> ''
+       AND EXISTS (SELECT 1 FROM snapshots s WHERE s.steam_id = u.steam_id LIMIT 1)`,
+    ids,
+  );
+  const order = new Map(ids.map((id, index) => [id, index]));
+  rows.sort((a, b) => (order.get(String(a.steam_id)) ?? 0) - (order.get(String(b.steam_id)) ?? 0));
+  return {
+    players: rows.map((row) => ({
+      steamId: String(row.steam_id),
+      persona: String(row.persona || row.steam_id),
+      discordId: String(row.discord_id),
+    })),
+  };
+});
+
 app.get("/api/bot/feed-samples", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   return { samples: await feedSamples() };
