@@ -72,7 +72,15 @@ function primary(row: Record<string, unknown> | undefined): { key: ClassKey; lev
   return best && peak > 0 ? { key: best, level: peak } : null;
 }
 
-type Fighter = { steamId: string; name: string; kills: number; deaths: number; headshots: number; minutes: number };
+type Fighter = {
+  steamId: string;
+  name: string;
+  kills: number;
+  deaths: number;
+  headshots: number;
+  minutes: number;
+  matches: number;
+};
 
 /** Игровой ник часто с [TAG] — снимаем, тег сквада подставим только с сайта. */
 function stripGameTag(name: string) {
@@ -141,6 +149,7 @@ async function fromFeed(span: ReturnType<typeof moscowWeek>): Promise<Fighter[]>
       headshots: Number(row.headshots) || 0,
       deaths: died.get(String(row.steam_id)) || 0,
       minutes: 0,
+      matches: 0,
     }))
     .filter((row) => row.kills > 0);
 }
@@ -166,8 +175,22 @@ async function fromPresence(span: ReturnType<typeof moscowWeek>): Promise<Fighte
       headshots: 0,
       deaths: 0,
       minutes: Math.round((Number(row.seconds) || 0) / 60),
+      matches: 0,
     }))
     .filter((row) => row.kills > 0);
+}
+
+/** Полные матчи: доиграл (не leave). Crowd>100 тоже считается — это игра целиком. */
+async function fullMatchCounts(span: ReturnType<typeof moscowWeek>) {
+  const rows = await sql<Array<{ steam_id: string; n: number }>>`
+    SELECT steam_id, COUNT(DISTINCT match_key) AS n
+    FROM played_matches
+    WHERE ended_at >= ${span.start} AND ended_at < ${span.end}
+      AND result <> 'leave'
+      AND steam_id REGEXP '^[0-9]{17}$'
+    GROUP BY steam_id
+  `;
+  return new Map(rows.map((row) => [String(row.steam_id), Number(row.n) || 0]));
 }
 
 export async function weekBoard(now = new Date()) {
@@ -189,14 +212,14 @@ export async function weekBoard(now = new Date()) {
       fighters = await fromPresence(current);
     }
   }
-  // Боевой рейтинг: К/Д, затем % хедшотов, затем убийства. Мало фрагов — вниз (не раздувать К/Д).
-  const MIN_FIGHTS = 20;
+  // В топ — только от 10 матчей от начала до конца; дальше К/Д → HS% → убийства.
+  const MIN_MATCHES = 10;
+  const matchCounts = await fullMatchCounts(span);
+  for (const row of fighters) row.matches = matchCounts.get(row.steamId) || 0;
+  fighters = fighters.filter((row) => row.matches >= MIN_MATCHES);
   const kdValue = (row: Fighter) => (row.deaths > 0 ? row.kills / row.deaths : row.kills);
   const hsValue = (row: Fighter) => (row.kills > 0 ? row.headshots / row.kills : 0);
   fighters.sort((a, b) => {
-    const aOk = a.kills >= MIN_FIGHTS ? 1 : 0;
-    const bOk = b.kills >= MIN_FIGHTS ? 1 : 0;
-    if (bOk !== aOk) return bOk - aOk;
     const kd = kdValue(b) - kdValue(a);
     if (Math.abs(kd) > 1e-9) return kd;
     const hs = hsValue(b) - hsValue(a);
@@ -234,6 +257,7 @@ export async function weekBoard(now = new Date()) {
       deaths: row.deaths,
       kd: source === "feed" ? kdOf(row.kills, row.deaths) : null,
       minutes: row.minutes,
+      matches: row.matches,
       headshots: row.headshots,
       headshotPct: source === "feed" ? hs : null,
       class: role?.key ?? null,
@@ -245,8 +269,9 @@ export async function weekBoard(now = new Date()) {
     week: span.week,
     from: span.from,
     to: span.closed ? span.to : stamp(new Date(now.getTime() + 3 * 60 * 60 * 1000)),
-    closed: span.closed && fighters.length > 0,
+    closed: span.closed,
     source,
+    minMatches: MIN_MATCHES,
     season: config.season,
     players: ranked.slice(0, 100),
     classes: CLASS_ORDER.map((key) => ({
