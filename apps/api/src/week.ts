@@ -212,8 +212,8 @@ export async function weekBoard(now = new Date()) {
       fighters = await fromPresence(current);
     }
   }
-  // В топ — только от 10 матчей от начала до конца; дальше К/Д → HS% → убийства.
-  const MIN_MATCHES = 10;
+  // В топ — только от 5 матчей от начала до конца; дальше К/Д → HS% → убийства.
+  const MIN_MATCHES = 5;
   const matchCounts = await fullMatchCounts(span);
   for (const row of fighters) row.matches = matchCounts.get(row.steamId) || 0;
   fighters = fighters.filter((row) => row.matches >= MIN_MATCHES);
