@@ -140,24 +140,27 @@ async function touchPresence(matchId: string, steamId: string, name: string, at:
   const known = knownPlayer(steamId);
   const faction = cleanSide(known?.faction);
   const label = name || known?.name || "";
+  const seen = at ?? new Date();
   if (left) {
     await sql`
-      INSERT INTO match_presence (match_id, steam_id, name, faction, left_at)
-      VALUES (${matchId}, ${steamId}, ${label}, ${faction}, ${at})
+      INSERT INTO match_presence (match_id, steam_id, name, faction, left_at, first_seen)
+      VALUES (${matchId}, ${steamId}, ${label}, ${faction}, ${at}, ${seen})
       ON DUPLICATE KEY UPDATE
         name = IF(VALUES(name) = '', name, VALUES(name)),
         faction = IF(VALUES(faction) = '', faction, VALUES(faction)),
-        left_at = VALUES(left_at)
+        left_at = VALUES(left_at),
+        first_seen = COALESCE(first_seen, VALUES(first_seen))
     `;
     return;
   }
   await sql`
-    INSERT INTO match_presence (match_id, steam_id, name, faction, left_at)
-    VALUES (${matchId}, ${steamId}, ${label}, ${faction}, NULL)
+    INSERT INTO match_presence (match_id, steam_id, name, faction, left_at, first_seen)
+    VALUES (${matchId}, ${steamId}, ${label}, ${faction}, NULL, ${seen})
     ON DUPLICATE KEY UPDATE
       name = IF(VALUES(name) = '', name, VALUES(name)),
       faction = IF(VALUES(faction) = '', faction, VALUES(faction)),
-      left_at = NULL
+      left_at = NULL,
+      first_seen = COALESCE(first_seen, VALUES(first_seen))
   `;
 }
 
@@ -179,12 +182,14 @@ export async function trackRoster(players: Array<{ steamId: string; name?: strin
     if (tracked.get(key) === faction) continue;
     tracked.set(key, faction);
     const label = text(player.name, 80);
+    const now = new Date();
     await sql`
-      INSERT INTO match_presence (match_id, steam_id, name, faction, left_at)
-      VALUES (${matchId}, ${steamId}, ${label}, ${faction}, NULL)
+      INSERT INTO match_presence (match_id, steam_id, name, faction, left_at, first_seen)
+      VALUES (${matchId}, ${steamId}, ${label}, ${faction}, NULL, ${now})
       ON DUPLICATE KEY UPDATE
         name = IF(VALUES(name) = '', name, VALUES(name)),
-        faction = VALUES(faction)
+        faction = VALUES(faction),
+        first_seen = COALESCE(first_seen, VALUES(first_seen))
     `;
   }
 }
@@ -194,6 +199,7 @@ type Person = {
   name: string;
   faction: string;
   left: boolean;
+  late: boolean;
   kills: number;
   deaths: number;
   headshots: number;
@@ -218,8 +224,8 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
   const minutes = started && endedAt ? Math.max(1, Math.round((endedAt.getTime() - started.getTime()) / 60000)) : null;
   const server = text(serverName, 80) || clock[0]?.server_name || "";
   const map = mapName || clock[0]?.map_name || "";
-  const present = await sql<Array<{ steam_id: string; name: string; faction: string; left_at: unknown }>>`
-    SELECT steam_id, name, faction, left_at FROM match_presence WHERE match_id = ${matchId}
+  const present = await sql<Array<{ steam_id: string; name: string; faction: string; left_at: unknown; first_seen: unknown }>>`
+    SELECT steam_id, name, faction, left_at, first_seen FROM match_presence WHERE match_id = ${matchId}
   `;
   let kills = await sql<KillRow[]>`
     SELECT killer_steam, killer_name, victim_steam, victim_name, weapon, headshot, teamkill, suicide
@@ -234,6 +240,7 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     `;
   }
   const people = new Map<string, Person>();
+  const lateAfter = started ? new Date(started.getTime() + 2 * 60 * 1000) : null;
   const ensure = (steamId: string, name: string) => {
     const current = people.get(steamId);
     if (current) {
@@ -246,6 +253,7 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
       name: name || known?.name || "",
       faction: cleanSide(known?.faction),
       left: false,
+      late: false,
       kills: 0,
       deaths: 0,
       headshots: 0,
@@ -260,6 +268,8 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     const side = cleanSide(row.faction);
     if (side) person.faction = side;
     person.left = Boolean(row.left_at);
+    const seen = when(row.first_seen);
+    if (lateAfter && seen && seen.getTime() > lateAfter.getTime()) person.late = true;
   }
   for (const row of kills) {
     if (row.killer_steam && !row.suicide) {
@@ -271,7 +281,10 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     }
     if (row.victim_steam) ensure(row.victim_steam, row.victim_name).deaths += 1;
   }
-  const ranked = [...people.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+  // В таблицу и винрейт — кто доиграл от старта (не вышел и не зашёл поздно).
+  const ranked = [...people.values()]
+    .filter((person) => !person.left && !person.late)
+    .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
   const field = ranked.length;
   for (const [index, person] of ranked.entries()) {
     let weapon = "";
@@ -283,7 +296,7 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
       }
     }
     const crowd = field > 100;
-    const result = crowd ? "" : matchResult(person.faction, winner, person.left);
+    const result = crowd ? "" : matchResult(person.faction, winner, false);
     const from = endedAt ? new Date(endedAt.getTime() - 15 * 60 * 1000) : null;
     const to = endedAt ? new Date(endedAt.getTime() + 15 * 60 * 1000) : null;
     if (from && to) {

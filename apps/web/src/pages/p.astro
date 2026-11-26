@@ -172,10 +172,11 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
         history?: Array<{ endedAt?: string | null; server?: string; map?: string; minutes?: number | null; faction?: string; result?: string; place?: number | null; field?: number | null; kills?: number; deaths?: number; kd?: number | null; headshots?: number; teamkills?: number; weapon?: string }>;
         since?: string | null; last?: string | null;
       } | null;
-      const resultLabel = (result: string | undefined) => result === "win" ? "Выиграно" : result === "loss" ? "Потеряно" : result === "leave" ? "Досрочный выход" : "—";
+      const resultLabel = (result: string | undefined) => result === "win" ? "Победа" : result === "loss" ? "Поражение" : result === "leave" ? "Досрочный выход" : "—";
       const resultClass = (result: string | undefined) => result === "win" ? "win" : result === "loss" ? "loss" : "";
-      const matches = (combat?.history ?? []).filter((item) => String(item.map || "").trim() || String(item.result || "").trim());
-      const matchTotal = matches.length < 40 ? matches.length : (combat?.matches ?? matches.length);
+      // API уже отдаёт только полные матчи (win/loss); leave и пустые отфильтрованы.
+      const matches = (combat?.history ?? []).filter((item) => item.result === "win" || item.result === "loss");
+      const matchTotal = combat?.winGames ?? matches.length;
       const punishments = (profile.punishments ?? []) as Array<{ kind?: string; reason?: string; startedAt?: string | null; untilAt?: string | null; active?: boolean; liftedAt?: string | null }>;
       const term = (item: { untilAt?: string | null; active?: boolean; liftedAt?: string | null }) => item.untilAt ? `до ${stamp(item.untilAt)}` : item.active ? "до снятия" : item.liftedAt ? `снято ${stamp(item.liftedAt)}` : "—";
       const portraits: Record<string, string> = {
@@ -262,18 +263,20 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
       const syncNote = sync === "same"
         ? "Цифры те же, что уже были. Свежее игра отдаст, если закрыть WARDOGS и снять ещё раз."
         : sync === "game_running"
-          ? "Игра была запущена. Полностью закрой WARDOGS и нажми «Снять из игры»."
+          ? "Игра была запущена — карьеру так не снять. Полностью закрой WARDOGS (не сверни), потом «Снять из игры» или «Обновить статистику»."
           : sync === "stale"
             ? "Игра не отдала свежий снимок. Записали последние известные цифры. Закрой клиент и сними ещё раз."
           : sync === "access_denied"
             ? "Steam отменён. Нажми «Снять из игры» и подтверди вход."
+          : sync === "expired"
+            ? "Код входа истёк. Нажми «Снять из игры» ещё раз."
+          : sync === "token_timeout" || sync === "token_err" || (sync && sync.startsWith("token_"))
+            ? "Tracker не успел отдать карьеру. Закрой WARDOGS и нажми «Снять из игры» ещё раз."
+          : sync && sync !== "ok" && sync !== "wait"
+            ? "Не вышло снять карьеру. Закрой игру и нажми ещё раз."
           : empty && !combat
-            ? "Цифр ещё нет. Закрой WARDOGS и нажми «Снять из игры» — откроется Steam, мы запишем карьеру."
-            : sync === "expired"
-              ? "Код входа истёк. Нажми «Снять из игры» ещё раз."
-              : sync && sync !== "ok"
-                ? "Не вышло снять карьеру. Закрой игру и нажми ещё раз."
-                : "";
+            ? "Цифр ещё нет. Сделай по шагам: 1) полностью закрой WARDOGS; 2) нажми «Обновить статистику» или «Снять из игры»; 3) подтверди Steam. Пока игра открыта — снимок не пишется."
+            : "";
       const syncText = [rewardNote, syncNote].filter(Boolean).join(" ");
       root.innerHTML = `
         <article class="dossier"${accent ? ` data-accent="${accent}"` : ""}>
@@ -331,7 +334,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
                 <i class="tile-ring" style="--p:${Math.max(0, Math.min(100, Number(combat.winrate) || 0))}"></i>
                 <span>Винрейт · последние 10</span>
                 ${cnt(combat.winrate, 1, "%")}
-                <small>${Number(combat.winGames) > 0 ? `${num(combat.winGames)} ${Number(combat.winGames) === 1 ? "игра" : Number(combat.winGames) < 5 ? "игры" : "игр"} с итогом` : "Появится после первого матча с итогом"}</small>
+                <small>${Number(combat.winGames) > 0 ? `${num(combat.winGames)} полных ${Number(combat.winGames) === 1 ? "матч" : Number(combat.winGames) < 5 ? "матча" : "матчей"}` : "После матча от начала до конца"}</small>
                 ${(combat.form ?? []).length ? `<div class="form" role="img" aria-label="Последние игры">${(combat.form ?? []).slice().reverse().map((item) => `<i class="${item === "win" ? "win" : "loss"}" title="${item === "win" ? "Победа" : "Поражение"}"></i>`).join("")}</div>` : ""}
               </div>
               <div class="tile"><span>Хедшоты</span>${cnt(combat.headshotPct, 1, "%")}<small>${combat.headshots == null ? "" : `${num(combat.headshots)} шт.`}</small>${spark("headshots") || glyph("crosshair")}</div>
@@ -362,7 +365,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
           ${matches.length ? `<section class="match-log">
             <header>
               <p class="eyebrow">Матчи</p>
-              <p>Этот сервер, хранить навсегда</p>
+              <p>Только от начала до конца · этот сервер</p>
             </header>
             <div class="match-scroll">
               <table>

@@ -74,6 +74,39 @@ function primary(row: Record<string, unknown> | undefined): { key: ClassKey; lev
 
 type Fighter = { steamId: string; name: string; kills: number; deaths: number; headshots: number; minutes: number };
 
+/** Игровой ник часто с [TAG] — снимаем, тег сквада подставим только с сайта. */
+function stripGameTag(name: string) {
+  const clean = name.replace(/^\s*\[[^\]]{1,12}\]\s*/u, "").trim();
+  return clean || name.trim();
+}
+
+async function approvedSquadTags(ids: string[]) {
+  const tags = new Map<string, string>();
+  if (!ids.length) return tags;
+  const marks = ids.map(() => "?").join(", ");
+  const rows = await sql.unsafe<Array<{ steam_id: string; tag: string }>>(
+    `SELECT m.steam_id, sq.tag
+     FROM squad_members m
+     JOIN squads sq ON sq.id = m.squad_id
+     WHERE m.status = 'member' AND sq.status = 'approved'
+       AND m.steam_id IN (${marks})
+     ORDER BY m.role = 'leader' DESC, sq.id ASC`,
+    ids,
+  );
+  for (const row of rows) {
+    const steam = String(row.steam_id);
+    if (tags.has(steam)) continue;
+    const tag = String(row.tag || "").trim().toUpperCase();
+    if (tag) tags.set(steam, tag.slice(0, 8));
+  }
+  return tags;
+}
+
+function labeledName(raw: string, tag: string | undefined) {
+  const base = stripGameTag(raw).slice(0, 64);
+  return tag ? `[${tag}] ${base}`.slice(0, 80) : base;
+}
+
 async function fromFeed(span: ReturnType<typeof moscowWeek>): Promise<Fighter[]> {
   const kills = await sql<Array<{ steam_id: string; name: string | null; kills: number; headshots: number }>>`
     SELECT k.killer_steam AS steam_id,
@@ -151,9 +184,23 @@ export async function weekBoard(now = new Date()) {
       fighters = await fromPresence(current);
     }
   }
-  fighters.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || b.minutes - a.minutes || a.name.localeCompare(b.name, "ru"));
+  // Боевой рейтинг: К/Д, затем % хедшотов, затем убийства. Мало фрагов — вниз (не раздувать К/Д).
+  const MIN_FIGHTS = 20;
+  const kdValue = (row: Fighter) => (row.deaths > 0 ? row.kills / row.deaths : row.kills);
+  const hsValue = (row: Fighter) => (row.kills > 0 ? row.headshots / row.kills : 0);
+  fighters.sort((a, b) => {
+    const aOk = a.kills >= MIN_FIGHTS ? 1 : 0;
+    const bOk = b.kills >= MIN_FIGHTS ? 1 : 0;
+    if (bOk !== aOk) return bOk - aOk;
+    const kd = kdValue(b) - kdValue(a);
+    if (Math.abs(kd) > 1e-9) return kd;
+    const hs = hsValue(b) - hsValue(a);
+    if (Math.abs(hs) > 1e-9) return hs;
+    return b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name, "ru");
+  });
   const ids = fighters.map((row) => row.steamId);
   const classes = new Map<string, Record<string, unknown>>();
+  const squadTags = await approvedSquadTags(ids);
   if (ids.length) {
     const marks = ids.map(() => "?").join(", ");
     const snaps = await sql.unsafe<Array<Record<string, unknown>>>(
@@ -172,14 +219,18 @@ export async function weekBoard(now = new Date()) {
   }
   const card = (row: (typeof fighters)[number], place: number) => {
     const role = primary(classes.get(row.steamId));
+    const hs = row.kills > 0 ? Math.round((row.headshots / row.kills) * 1000) / 10 : null;
     return {
       place,
-      name: row.name,
+      name: labeledName(row.name, squadTags.get(row.steamId)),
+      squadTag: squadTags.get(row.steamId) ?? null,
+      steamId: row.steamId,
       kills: row.kills,
       deaths: row.deaths,
       kd: source === "feed" ? kdOf(row.kills, row.deaths) : null,
       minutes: row.minutes,
       headshots: row.headshots,
+      headshotPct: source === "feed" ? hs : null,
       class: role?.key ?? null,
       level: role?.level ?? 0,
     };

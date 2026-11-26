@@ -86,8 +86,15 @@ import Base from "../layouts/Base.astro";
   const fields: Record<string, string> = { level: "wardog_level", xp: "xp", value: "account_value", cash: "cash", gold: "gold", unlocks: "unlocks", assault: "role_assault", medic: "role_medic", recon: "role_recon", support: "role_support", driver: "role_driver", pilot: "role_pilot", kills: "server_kills", deaths: "server_deaths", kd: "server_kd" };
   const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
   const tierOf = (place: number) => place === 1 ? "r1" : place <= 5 ? "r5" : place <= 10 ? "r10" : place <= 25 ? "r25" : place <= 50 ? "r50" : place <= 100 ? "r100" : "r200";
+  /** Тег только у одобренного сквада на сайте; игровые [TAG] в нике не показываем. */
+  function displayName(player: Record<string, string | number | null>) {
+    const raw = String(player.persona ?? player.steam_id);
+    const base = raw.replace(/^\s*\[[^\]]{1,12}\]\s*/u, "").trim() || raw;
+    const tag = String(player.squad_tag ?? "").trim();
+    return tag ? `[${tag}] ${base}` : base;
+  }
   function face(player: Record<string, string | number | null>) {
-    const name = String(player.persona ?? player.steam_id);
+    const name = displayName(player);
     const portrait = typeof player.avatar === "string" && player.avatar.startsWith("https://") ? player.avatar : "";
     return `<span class="ring">${portrait ? `<img src="${esc(portrait)}" alt="" />` : `<span>${esc(name.slice(0, 1))}</span>`}</span>`;
   }
@@ -139,7 +146,7 @@ import Base from "../layouts/Base.astro";
     podium.dataset.n = ranked && players.length ? String(Math.min(players.length, 3)) : "0";
     podium.innerHTML = ranked ? players.slice(0, 3).map((player, index) => {
       const place = index + 1;
-      const name = String(player.persona ?? player.steam_id);
+      const name = displayName(player);
       return `<a class="pod pod-${place} ${tierOf(place)}" href="/p?id=${player.steam_id}" style="--i:${place === 1 ? 0 : place}">
         <em>${place}</em>
         ${face(player)}
@@ -150,7 +157,7 @@ import Base from "../layouts/Base.astro";
     }).join("") : "";
     rows.innerHTML = players.map((player, index) => {
       const place = index + 1;
-      const name = String(player.persona ?? player.steam_id);
+      const name = displayName(player);
       const tier = ranked ? tierOf(place) : "";
       const stats = ["level", "xp", "value", "cash", "gold", "unlocks", "assault", "medic", "recon", "support", "driver", "pilot", "kills", "deaths", "kd"];
       const rawFaction = String(player.server_faction ?? "").trim();

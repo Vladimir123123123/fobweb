@@ -1111,7 +1111,14 @@ app.get("/api/ratings", async (request) => {
               WHEN c.steam_id IS NULL THEN NULL
               WHEN c.deaths = 0 THEN c.kills
               ELSE ROUND(c.kills / c.deaths, 2)
-            END AS server_kd
+            END AS server_kd,
+            (
+              SELECT sq.tag FROM squad_members m
+              JOIN squads sq ON sq.id = m.squad_id
+              WHERE m.steam_id = ids.steam_id AND m.status = 'member' AND sq.status = 'approved'
+              ORDER BY m.role = 'leader' DESC, sq.id ASC
+              LIMIT 1
+            ) AS squad_tag
      FROM (
        SELECT u.steam_id
        FROM users u
