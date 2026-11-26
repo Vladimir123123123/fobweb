@@ -322,7 +322,13 @@ INSERT IGNORE INTO home_side (id, streams, vips) VALUES (1, '[]', '[]');
 CREATE TABLE IF NOT EXISTS community (
   steam_id varchar(20) NOT NULL PRIMARY KEY,
   xp int NOT NULL DEFAULT 0,
-  coins int NOT NULL DEFAULT 0
+  coins decimal(12,2) NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS kill_streaks (
+  steam_id varchar(20) NOT NULL PRIMARY KEY,
+  streak int NOT NULL DEFAULT 0,
+  updated_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS quests (

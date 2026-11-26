@@ -152,6 +152,14 @@ export async function migrate() {
   }
   // Топ по умолчанию: все в рейтинге, пока сами/админ не скроют.
   await sql.unsafe("ALTER TABLE users MODIFY cis_opt_in tinyint(1) NOT NULL DEFAULT 1");
+  await sql.unsafe("ALTER TABLE community MODIFY coins decimal(12,2) NOT NULL DEFAULT 0");
+  await sql.unsafe(`
+    CREATE TABLE IF NOT EXISTS kill_streaks (
+      steam_id varchar(20) NOT NULL PRIMARY KEY,
+      streak int NOT NULL DEFAULT 0,
+      updated_at datetime(3) NOT NULL DEFAULT current_timestamp(3)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
   await sql`UPDATE users SET cis_opt_in = 1 WHERE cis_opt_in = 0`;
   if (config.ownerSteamId) {
     await sql`INSERT IGNORE INTO admins (steam_id) VALUES (${config.ownerSteamId})`;

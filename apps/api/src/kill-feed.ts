@@ -140,8 +140,9 @@ export async function acceptFeed(body: unknown) {
       teamkill: tagged(event.contextTags, TEAMKILL),
     });
   }
+  const { applyCombatPoints } = await import("./combat-points.js");
   for (const row of rows) {
-    await sql`
+    const wrote = await sql`
       INSERT IGNORE INTO server_kills (
         event_id, match_id, killed_at, received_at, killer_steam, killer_name, victim_steam, victim_name,
         weapon, meters, headshot, suicide, teamkill
@@ -152,6 +153,16 @@ export async function acceptFeed(body: unknown) {
       )
     `;
     seen.add(row.eventId);
+    // Только новые киллы — иначе повтор фида накрутит очки.
+    if (wrote.length) {
+      await applyCombatPoints({
+        killerSteam: row.killerSteam,
+        victimSteam: row.victimSteam,
+        headshot: row.headshot,
+        suicide: row.suicide,
+        teamkill: row.teamkill,
+      }).catch(() => undefined);
+    }
     recent.unshift({
       killer: row.suicide ? "" : row.killerName,
       victim: row.victimName,
