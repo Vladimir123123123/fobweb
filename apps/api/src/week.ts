@@ -107,26 +107,31 @@ function labeledName(raw: string, tag: string | undefined) {
   return tag ? `[${tag}] ${base}`.slice(0, 80) : base;
 }
 
+/** Время килла: у части событий killed_at битый/пустой — берём received_at (как в квестах). */
+const KILL_AT = "COALESCE(IF(killed_at >= '2024-01-01' AND killed_at < '2036-01-01', killed_at, NULL), received_at)";
+
 async function fromFeed(span: ReturnType<typeof moscowWeek>): Promise<Fighter[]> {
-  const kills = await sql<Array<{ steam_id: string; name: string | null; kills: number; headshots: number }>>`
-    SELECT k.killer_steam AS steam_id,
-           COALESCE(MAX(u.persona), MAX(k.killer_name)) AS name,
-           SUM(k.suicide = 0 AND k.teamkill = 0) AS kills,
-           SUM(k.suicide = 0 AND k.teamkill = 0 AND k.headshot = 1) AS headshots
-    FROM server_kills k
-    LEFT JOIN users u ON u.steam_id = k.killer_steam
-    WHERE k.killed_at >= ${span.start} AND k.killed_at < ${span.end}
-      AND k.killer_steam REGEXP '^[0-9]{17}$'
-    GROUP BY k.killer_steam
-  `;
-  const deaths = await sql<Array<{ steam_id: string; deaths: number }>>`
-    SELECT victim_steam AS steam_id, COUNT(*) AS deaths
-    FROM server_kills
-    WHERE killed_at >= ${span.start} AND killed_at < ${span.end}
-      AND suicide = 0 AND teamkill = 0
-      AND victim_steam REGEXP '^[0-9]{17}$'
-    GROUP BY victim_steam
-  `;
+  const kills = await sql.unsafe<Array<{ steam_id: string; name: string | null; kills: number; headshots: number }>>(
+    `SELECT k.killer_steam AS steam_id,
+            COALESCE(MAX(u.persona), MAX(k.killer_name)) AS name,
+            SUM(k.suicide = 0 AND k.teamkill = 0) AS kills,
+            SUM(k.suicide = 0 AND k.teamkill = 0 AND k.headshot = 1) AS headshots
+     FROM server_kills k
+     LEFT JOIN users u ON u.steam_id = k.killer_steam
+     WHERE ${KILL_AT} >= ? AND ${KILL_AT} < ?
+       AND k.killer_steam REGEXP '^[0-9]{17}$'
+     GROUP BY k.killer_steam`,
+    [span.start, span.end],
+  );
+  const deaths = await sql.unsafe<Array<{ steam_id: string; deaths: number }>>(
+    `SELECT victim_steam AS steam_id, COUNT(*) AS deaths
+     FROM server_kills
+     WHERE ${KILL_AT} >= ? AND ${KILL_AT} < ?
+       AND suicide = 0 AND teamkill = 0
+       AND victim_steam REGEXP '^[0-9]{17}$'
+     GROUP BY victim_steam`,
+    [span.start, span.end],
+  );
   const died = new Map(deaths.map((row) => [String(row.steam_id), Number(row.deaths) || 0]));
   return kills
     .map((row) => ({
