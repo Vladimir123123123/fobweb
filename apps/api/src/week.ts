@@ -281,3 +281,170 @@ export async function weekBoard(now = new Date()) {
     })),
   };
 }
+
+const SQUAD_MIN_SIDE = 5;
+
+type SquadMatchRow = {
+  match_key: string;
+  steam_id: string;
+  faction: string;
+  result: string;
+  kills: number;
+  deaths: number;
+  name: string | null;
+};
+
+/** Недельный рейтинг сквадов: матч засчитывается, если ≥5 участников одного сквада на одной стороне. */
+export async function squadWeekBoard(now = new Date()) {
+  const closed = moscowWeek(now, -1);
+  const current = moscowWeek(now, 0);
+  let span = closed;
+  let rows = await squadMatchRows(closed);
+  if (!rows.length) {
+    span = current;
+    rows = await squadMatchRows(current);
+  }
+
+  const members = await sql<Array<{ squad_id: number; tag: string; name: string; steam_id: string }>>`
+    SELECT sq.id AS squad_id, sq.tag, sq.name, m.steam_id
+    FROM squads sq
+    JOIN squad_members m ON m.squad_id = sq.id
+    WHERE sq.status = 'approved' AND m.status = 'member'
+  `;
+  const bySteam = new Map<string, { squadId: number; tag: string; name: string }>();
+  const squadMeta = new Map<number, { tag: string; name: string }>();
+  for (const row of members) {
+    const squadId = Number(row.squad_id);
+    const tag = String(row.tag || "").trim().toUpperCase().slice(0, 8);
+    const name = String(row.name || tag).slice(0, 40);
+    if (!tag) continue;
+    squadMeta.set(squadId, { tag, name });
+    const steam = String(row.steam_id);
+    if (/^\d{17}$/.test(steam) && !bySteam.has(steam)) {
+      bySteam.set(steam, { squadId, tag, name });
+    }
+  }
+
+  type Acc = {
+    squadId: number;
+    tag: string;
+    name: string;
+    games: Set<string>;
+    wins: Set<string>;
+    players: Map<string, { name: string; kills: number; deaths: number; games: number }>;
+  };
+  const acc = new Map<number, Acc>();
+
+  const grouped = new Map<string, SquadMatchRow[]>();
+  for (const row of rows) {
+    const steam = String(row.steam_id);
+    const faction = String(row.faction || "").trim();
+    if (!bySteam.has(steam) || !faction) continue;
+    const key = `${row.match_key}::${faction}`;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(row);
+    grouped.set(key, bucket);
+  }
+
+  for (const [key, bucket] of grouped) {
+    const bySquad = new Map<number, SquadMatchRow[]>();
+    for (const row of bucket) {
+      const meta = bySteam.get(String(row.steam_id));
+      if (!meta) continue;
+      const list = bySquad.get(meta.squadId) ?? [];
+      list.push(row);
+      bySquad.set(meta.squadId, list);
+    }
+    for (const [squadId, list] of bySquad) {
+      if (list.length < SQUAD_MIN_SIDE) continue;
+      const meta = squadMeta.get(squadId);
+      if (!meta) continue;
+      let pack = acc.get(squadId);
+      if (!pack) {
+        pack = {
+          squadId,
+          tag: meta.tag,
+          name: meta.name,
+          games: new Set(),
+          wins: new Set(),
+          players: new Map(),
+        };
+        acc.set(squadId, pack);
+      }
+      pack.games.add(key);
+      const won = list.some((row) => String(row.result || "").toLowerCase() === "win");
+      if (won) pack.wins.add(key);
+      for (const row of list) {
+        const steam = String(row.steam_id);
+        const persona = String(row.name || steam).slice(0, 64);
+        const prev = pack.players.get(steam) ?? { name: persona, kills: 0, deaths: 0, games: 0 };
+        prev.name = persona;
+        prev.kills += Number(row.kills) || 0;
+        prev.deaths += Number(row.deaths) || 0;
+        prev.games += 1;
+        pack.players.set(steam, prev);
+      }
+    }
+  }
+
+  const squads = [...acc.values()]
+    .map((pack) => {
+      const games = pack.games.size;
+      const wins = pack.wins.size;
+      const winrate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
+      const topPlayers = [...pack.players.values()]
+        .sort((a, b) => {
+          const kd = (b.deaths > 0 ? b.kills / b.deaths : b.kills) - (a.deaths > 0 ? a.kills / a.deaths : a.kills);
+          if (Math.abs(kd) > 1e-9) return kd;
+          return b.kills - a.kills || a.name.localeCompare(b.name, "ru");
+        })
+        .slice(0, 5)
+        .map((row, index) => ({
+          place: index + 1,
+          name: stripGameTag(row.name).slice(0, 64),
+          kills: row.kills,
+          deaths: row.deaths,
+          kd: kdOf(row.kills, row.deaths),
+          games: row.games,
+        }));
+      return {
+        tag: pack.tag,
+        name: pack.name,
+        games,
+        wins,
+        losses: Math.max(0, games - wins),
+        winrate,
+        topPlayers,
+      };
+    })
+    .sort((a, b) => b.wins - a.wins || b.winrate - a.winrate || b.games - a.games || a.tag.localeCompare(b.tag, "ru"))
+    .map((row, index) => ({ place: index + 1, ...row }));
+
+  return {
+    week: span.week,
+    from: span.from,
+    to: span.closed ? span.to : stamp(new Date(now.getTime() + 3 * 60 * 60 * 1000)),
+    closed: span.closed,
+    minSide: SQUAD_MIN_SIDE,
+    season: config.season,
+    squads,
+  };
+}
+
+async function squadMatchRows(span: ReturnType<typeof moscowWeek>) {
+  return sql<SquadMatchRow[]>`
+    SELECT p.match_key,
+           p.steam_id,
+           p.faction,
+           p.result,
+           p.kills,
+           p.deaths,
+           COALESCE(u.persona, p.steam_id) AS name
+    FROM played_matches p
+    LEFT JOIN users u ON u.steam_id = p.steam_id
+    WHERE p.ended_at >= ${span.start} AND p.ended_at < ${span.end}
+      AND p.result <> 'leave'
+      AND p.faction <> ''
+      AND p.steam_id REGEXP '^[0-9]{17}$'
+  `;
+}

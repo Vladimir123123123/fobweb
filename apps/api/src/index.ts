@@ -18,7 +18,7 @@ import { VIP_ROSTER } from "./vip-roster.js";
 import { ackQuestAlerts, adminQuestBoard, botQuestBoard, claimQuest, insertQuest, pendingQuestAlerts, publicQuests, questInput, removeQuest, saveQuest, startQuest, startQuestByDiscord } from "./quests.js";
 import { adminShop, buyProduct, creditStatRefresh, ensureShop, finishGrant, insertProduct, pendingGrants, productInput, publicShop, removeProduct, saveProduct, saveSettings, settingsInput } from "./shop.js";
 import { assignClanSlot, buyClanSlot, clanView, clearClanSlot, disbandSquad, finishRevoke, officerOf, pendingRevokes, removeMember, setDeputy } from "./clan.js";
-import { weekBoard } from "./week.js";
+import { squadWeekBoard, weekBoard } from "./week.js";
 import { steamLoginUrl, steamProfile, verifySteamLogin } from "./steam.js";
 
 function trackerRequest(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) {
@@ -1457,6 +1457,11 @@ app.get("/api/bot/feed-samples", async (request, reply) => {
 app.get("/api/bot/week", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   return weekBoard();
+});
+
+app.get("/api/bot/squad-week", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  return squadWeekBoard();
 });
 
 app.get("/api/bot/board", async (request, reply) => {
