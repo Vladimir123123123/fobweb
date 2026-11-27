@@ -298,13 +298,6 @@ type SquadMatchRow = {
 export async function squadWeekBoard(now = new Date()) {
   const closed = moscowWeek(now, -1);
   const current = moscowWeek(now, 0);
-  let span = closed;
-  let rows = await squadMatchRows(closed);
-  if (!rows.length) {
-    span = current;
-    rows = await squadMatchRows(current);
-  }
-
   const members = await sql<Array<{ squad_id: number; tag: string; name: string; steam_id: string }>>`
     SELECT sq.id AS squad_id, sq.tag, sq.name, m.steam_id
     FROM squads sq
@@ -325,100 +318,105 @@ export async function squadWeekBoard(now = new Date()) {
     }
   }
 
-  type Acc = {
-    squadId: number;
-    tag: string;
-    name: string;
-    games: Set<string>;
-    wins: Set<string>;
-    players: Map<string, { name: string; kills: number; deaths: number; games: number }>;
-  };
-  const acc = new Map<number, Acc>();
-
-  const grouped = new Map<string, SquadMatchRow[]>();
-  for (const row of rows) {
-    const steam = String(row.steam_id);
-    const faction = String(row.faction || "").trim();
-    if (!bySteam.has(steam) || !faction) continue;
-    const key = `${row.match_key}::${faction}`;
-    const bucket = grouped.get(key) ?? [];
-    bucket.push(row);
-    grouped.set(key, bucket);
-  }
-
-  for (const [key, bucket] of grouped) {
-    const bySquad = new Map<number, SquadMatchRow[]>();
-    for (const row of bucket) {
-      const meta = bySteam.get(String(row.steam_id));
-      if (!meta) continue;
-      const list = bySquad.get(meta.squadId) ?? [];
-      list.push(row);
-      bySquad.set(meta.squadId, list);
+  async function build(span: ReturnType<typeof moscowWeek>) {
+    const rows = await squadMatchRows(span);
+    type Acc = {
+      squadId: number;
+      tag: string;
+      name: string;
+      games: Set<string>;
+      wins: Set<string>;
+      players: Map<string, { name: string; kills: number; deaths: number; games: number }>;
+    };
+    const acc = new Map<number, Acc>();
+    const grouped = new Map<string, SquadMatchRow[]>();
+    for (const row of rows) {
+      const steam = String(row.steam_id);
+      const faction = String(row.faction || "").trim();
+      if (!bySteam.has(steam) || !faction) continue;
+      const key = `${row.match_key}::${faction}`;
+      const bucket = grouped.get(key) ?? [];
+      bucket.push(row);
+      grouped.set(key, bucket);
     }
-    for (const [squadId, list] of bySquad) {
-      if (list.length < SQUAD_MIN_SIDE) continue;
-      const meta = squadMeta.get(squadId);
-      if (!meta) continue;
-      let pack = acc.get(squadId);
-      if (!pack) {
-        pack = {
-          squadId,
-          tag: meta.tag,
-          name: meta.name,
-          games: new Set(),
-          wins: new Set(),
-          players: new Map(),
+    for (const [key, bucket] of grouped) {
+      const bySquad = new Map<number, SquadMatchRow[]>();
+      for (const row of bucket) {
+        const meta = bySteam.get(String(row.steam_id));
+        if (!meta) continue;
+        const list = bySquad.get(meta.squadId) ?? [];
+        list.push(row);
+        bySquad.set(meta.squadId, list);
+      }
+      for (const [squadId, list] of bySquad) {
+        if (list.length < SQUAD_MIN_SIDE) continue;
+        const meta = squadMeta.get(squadId);
+        if (!meta) continue;
+        let pack = acc.get(squadId);
+        if (!pack) {
+          pack = {
+            squadId,
+            tag: meta.tag,
+            name: meta.name,
+            games: new Set(),
+            wins: new Set(),
+            players: new Map(),
+          };
+          acc.set(squadId, pack);
+        }
+        pack.games.add(key);
+        const won = list.some((row) => String(row.result || "").toLowerCase() === "win");
+        if (won) pack.wins.add(key);
+        for (const row of list) {
+          const steam = String(row.steam_id);
+          const persona = String(row.name || steam).slice(0, 64);
+          const prev = pack.players.get(steam) ?? { name: persona, kills: 0, deaths: 0, games: 0 };
+          prev.name = persona;
+          prev.kills += Number(row.kills) || 0;
+          prev.deaths += Number(row.deaths) || 0;
+          prev.games += 1;
+          pack.players.set(steam, prev);
+        }
+      }
+    }
+    const squads = [...acc.values()]
+      .map((pack) => {
+        const games = pack.games.size;
+        const wins = pack.wins.size;
+        const winrate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
+        const topPlayers = [...pack.players.values()]
+          .sort((a, b) => {
+            const kd = (b.deaths > 0 ? b.kills / b.deaths : b.kills) - (a.deaths > 0 ? a.kills / a.deaths : a.kills);
+            if (Math.abs(kd) > 1e-9) return kd;
+            return b.kills - a.kills || a.name.localeCompare(b.name, "ru");
+          })
+          .slice(0, 5)
+          .map((row, index) => ({
+            place: index + 1,
+            name: stripGameTag(row.name).slice(0, 64),
+            kills: row.kills,
+            deaths: row.deaths,
+            kd: kdOf(row.kills, row.deaths),
+            games: row.games,
+          }));
+        return {
+          tag: pack.tag,
+          name: pack.name,
+          games,
+          wins,
+          losses: Math.max(0, games - wins),
+          winrate,
+          topPlayers,
         };
-        acc.set(squadId, pack);
-      }
-      pack.games.add(key);
-      const won = list.some((row) => String(row.result || "").toLowerCase() === "win");
-      if (won) pack.wins.add(key);
-      for (const row of list) {
-        const steam = String(row.steam_id);
-        const persona = String(row.name || steam).slice(0, 64);
-        const prev = pack.players.get(steam) ?? { name: persona, kills: 0, deaths: 0, games: 0 };
-        prev.name = persona;
-        prev.kills += Number(row.kills) || 0;
-        prev.deaths += Number(row.deaths) || 0;
-        prev.games += 1;
-        pack.players.set(steam, prev);
-      }
-    }
+      })
+      .sort((a, b) => b.wins - a.wins || b.winrate - a.winrate || b.games - a.games || a.tag.localeCompare(b.tag, "ru"))
+      .map((row, index) => ({ place: index + 1, ...row }));
+    return { span, squads };
   }
 
-  const squads = [...acc.values()]
-    .map((pack) => {
-      const games = pack.games.size;
-      const wins = pack.wins.size;
-      const winrate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
-      const topPlayers = [...pack.players.values()]
-        .sort((a, b) => {
-          const kd = (b.deaths > 0 ? b.kills / b.deaths : b.kills) - (a.deaths > 0 ? a.kills / a.deaths : a.kills);
-          if (Math.abs(kd) > 1e-9) return kd;
-          return b.kills - a.kills || a.name.localeCompare(b.name, "ru");
-        })
-        .slice(0, 5)
-        .map((row, index) => ({
-          place: index + 1,
-          name: stripGameTag(row.name).slice(0, 64),
-          kills: row.kills,
-          deaths: row.deaths,
-          kd: kdOf(row.kills, row.deaths),
-          games: row.games,
-        }));
-      return {
-        tag: pack.tag,
-        name: pack.name,
-        games,
-        wins,
-        losses: Math.max(0, games - wins),
-        winrate,
-        topPlayers,
-      };
-    })
-    .sort((a, b) => b.wins - a.wins || b.winrate - a.winrate || b.games - a.games || a.tag.localeCompare(b.tag, "ru"))
-    .map((row, index) => ({ place: index + 1, ...row }));
+  let built = await build(closed);
+  if (!built.squads.length) built = await build(current);
+  const { span, squads } = built;
 
   return {
     week: span.week,
