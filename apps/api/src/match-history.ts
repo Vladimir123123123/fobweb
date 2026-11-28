@@ -27,6 +27,24 @@ function fromUnix(value: number) {
   return sane(new Date(value > 10_000_000_000 ? value : value * 1000));
 }
 
+/** eventTime из игры — секунды от старта матча, не unix. Якорим к wall-clock. */
+const matchAnchors = new Map<string, number>();
+let lastFeedAt = 0;
+
+function wallTime(matchId: string, eventTime: unknown): Date | null {
+  const absolute = when(eventTime);
+  if (absolute) return absolute;
+  const raw = typeof eventTime === "number" ? eventTime : Number(String(eventTime ?? "").trim());
+  if (!matchId || !Number.isFinite(raw) || raw < 0 || raw > 200_000) return null;
+  const now = Date.now();
+  let anchor = matchAnchors.get(matchId);
+  if (anchor == null) {
+    anchor = now - raw * 1000;
+    matchAnchors.set(matchId, anchor);
+  }
+  return sane(new Date(anchor + raw * 1000));
+}
+
 function sane(date: Date) {
   const time = date.getTime();
   if (Number.isNaN(time)) return null;
@@ -104,9 +122,21 @@ function declaredWinner(event: FeedEvent) {
     if (side) return side;
   }
   for (const [key, value] of Object.entries(event)) {
-    if (!/win/i.test(key)) continue;
+    if (!/win/i.test(key) || key === "randomWinner") continue;
     const side = sideFromValue(value);
     if (side) return side;
+  }
+  const scores = event.factionScores;
+  if (Array.isArray(scores)) {
+    const map = new Map<SideKey, number>();
+    for (const item of scores) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const key = sideKeyOf(row.faction ?? row.name ?? row.team);
+      const score = Math.round(Number(row.score));
+      if (key && Number.isFinite(score) && score >= 0) map.set(key, score);
+    }
+    return leaderOf(map);
   }
   return "";
 }
@@ -117,12 +147,13 @@ function sideFromValue(value: unknown): string {
 }
 
 async function rememberClock(matchId: string, mapName: string, serverName: string, state: string, at: Date | null) {
-  const playing = /play/i.test(state) && !/wait/i.test(state);
+  const playing = /play/i.test(state) && !/wait|prematch|postmatch/i.test(state);
+  const stamp = at ?? (playing ? new Date() : null);
   const rows = await sql<Array<{ started_at: unknown }>>`SELECT started_at FROM match_clock WHERE match_id = ${matchId}`;
   if (!rows.length) {
     await sql`
       INSERT INTO match_clock (match_id, map_name, server_name, state, started_at)
-      VALUES (${matchId}, ${mapName}, ${serverName}, ${state}, ${playing ? at : null})
+      VALUES (${matchId}, ${mapName}, ${serverName}, ${state}, ${playing ? stamp : null})
     `;
     return;
   }
@@ -131,7 +162,7 @@ async function rememberClock(matchId: string, mapName: string, serverName: strin
     SET map_name = IF(${mapName} = '', map_name, ${mapName}),
         server_name = IF(${serverName} = '', server_name, ${serverName}),
         state = ${state},
-        started_at = IF(started_at IS NULL AND ${playing ? 1 : 0} = 1, ${at}, started_at)
+        started_at = IF(started_at IS NULL AND ${playing && stamp ? 1 : 0} = 1, ${stamp}, started_at)
     WHERE match_id = ${matchId}
   `;
 }
@@ -207,15 +238,20 @@ type Person = {
   weapons: Map<string, number>;
 };
 
-type KillRow = {
-  killer_steam: string; killer_name: string; victim_steam: string; victim_name: string;
-  weapon: string; headshot: number; teamkill: number; suicide: number;
+type KillAgg = {
+  steam_id: string;
+  name: string;
+  kills: number;
+  deaths: number;
+  headshots: number;
+  teamkills: number;
+  weapon: string;
 };
 
 async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | null) {
   const matchId = text(event.matchId, 80) || currentMatch;
   if (!matchId) return;
-  const winner = declaredWinner(event) || scoreWinner();
+  let winner = declaredWinner(event) || scoreWinner();
   const mapName = mapLabel(text(event.mapName, 80));
   const clock = await sql<Array<{ map_name: string; server_name: string; started_at: unknown }>>`
     SELECT map_name, server_name, started_at FROM match_clock WHERE match_id = ${matchId}
@@ -227,16 +263,59 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
   const present = await sql<Array<{ steam_id: string; name: string; faction: string; left_at: unknown; first_seen: unknown }>>`
     SELECT steam_id, name, faction, left_at, first_seen FROM match_presence WHERE match_id = ${matchId}
   `;
-  let kills = await sql<KillRow[]>`
-    SELECT killer_steam, killer_name, victim_steam, victim_name, weapon, headshot, teamkill, suicide
-    FROM server_kills WHERE match_id = ${matchId}
-  `;
-  // Игра могла прислать убийства без номера матча: тогда берём их по времени матча.
-  if (!kills.length && started && endedAt) {
-    kills = await sql<KillRow[]>`
-      SELECT killer_steam, killer_name, victim_steam, victim_name, weapon, headshot, teamkill, suicide
+  // Агрегация в SQL — иначе 10k+ киллов вешают закрытие матча.
+  let killStats = await sql<KillAgg[]>`
+    SELECT steam_id, name, kills, deaths, headshots, teamkills, weapon FROM (
+      SELECT killer_steam AS steam_id,
+             MAX(killer_name) AS name,
+             SUM(suicide = 0) AS kills,
+             0 AS deaths,
+             SUM(suicide = 0 AND headshot = 1) AS headshots,
+             SUM(suicide = 0 AND teamkill = 1) AS teamkills,
+             SUBSTRING_INDEX(GROUP_CONCAT(IF(suicide = 0 AND weapon <> '', weapon, NULL) ORDER BY 1 DESC SEPARATOR ','), ',', 1) AS weapon
       FROM server_kills
-      WHERE COALESCE(killed_at, received_at) BETWEEN ${started} AND ${endedAt}
+      WHERE match_id = ${matchId} AND killer_steam REGEXP '^[0-9]{17}$'
+      GROUP BY killer_steam
+      UNION ALL
+      SELECT victim_steam AS steam_id,
+             MAX(victim_name) AS name,
+             0 AS kills,
+             COUNT(*) AS deaths,
+             0 AS headshots,
+             0 AS teamkills,
+             '' AS weapon
+      FROM server_kills
+      WHERE match_id = ${matchId} AND victim_steam REGEXP '^[0-9]{17}$'
+      GROUP BY victim_steam
+    ) parts
+  `;
+  if (!killStats.length && started && endedAt) {
+    killStats = await sql<KillAgg[]>`
+      SELECT steam_id, name, kills, deaths, headshots, teamkills, weapon FROM (
+        SELECT killer_steam AS steam_id,
+               MAX(killer_name) AS name,
+               SUM(suicide = 0) AS kills,
+               0 AS deaths,
+               SUM(suicide = 0 AND headshot = 1) AS headshots,
+               SUM(suicide = 0 AND teamkill = 1) AS teamkills,
+               SUBSTRING_INDEX(GROUP_CONCAT(IF(suicide = 0 AND weapon <> '', weapon, NULL) ORDER BY 1 DESC SEPARATOR ','), ',', 1) AS weapon
+        FROM server_kills
+        WHERE COALESCE(killed_at, received_at) BETWEEN ${started} AND ${endedAt}
+          AND killer_steam REGEXP '^[0-9]{17}$'
+        GROUP BY killer_steam
+        UNION ALL
+        SELECT victim_steam AS steam_id,
+               MAX(victim_name) AS name,
+               0 AS kills,
+               COUNT(*) AS deaths,
+               0 AS headshots,
+               0 AS teamkills,
+               '' AS weapon
+        FROM server_kills
+        WHERE COALESCE(killed_at, received_at) BETWEEN ${started} AND ${endedAt}
+          AND victim_steam REGEXP '^[0-9]{17}$'
+        GROUP BY victim_steam
+      ) parts
     `;
   }
   const people = new Map<string, Person>();
@@ -271,22 +350,55 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     const seen = when(row.first_seen);
     if (lateAfter && seen && seen.getTime() > lateAfter.getTime()) person.late = true;
   }
-  for (const row of kills) {
-    if (row.killer_steam && !row.suicide) {
-      const killer = ensure(row.killer_steam, row.killer_name);
-      killer.kills += 1;
-      if (row.headshot) killer.headshots += 1;
-      if (row.teamkill) killer.teamkills += 1;
-      if (row.weapon) killer.weapons.set(row.weapon, (killer.weapons.get(row.weapon) || 0) + 1);
-    }
-    if (row.victim_steam) ensure(row.victim_steam, row.victim_name).deaths += 1;
+  for (const row of killStats) {
+    const person = ensure(row.steam_id, row.name);
+    person.kills += Number(row.kills) || 0;
+    person.deaths += Number(row.deaths) || 0;
+    person.headshots += Number(row.headshots) || 0;
+    person.teamkills += Number(row.teamkills) || 0;
+    const weapon = String(row.weapon || "").trim();
+    if (weapon) person.weapons.set(weapon, (person.weapons.get(weapon) || 0) + 1);
   }
-  // В таблицу и винрейт — кто доиграл от старта (не вышел и не зашёл поздно).
-  const ranked = [...people.values()]
-    .filter((person) => !person.left && !person.late)
+  if (!winner) {
+    const bySide = new Map<SideKey, number>();
+    for (const person of people.values()) {
+      const key = sideKeyOf(person.faction);
+      if (!key || person.kills < 1) continue;
+      bySide.set(key, (bySide.get(key) ?? 0) + person.kills);
+    }
+    winner = leaderOf(bySide);
+  }
+  // Presence копит ротацию. В историю — кто дрался; без боя только если не вышел и не опоздал.
+  let ranked = [...people.values()]
+    .filter((person) => {
+      const fought = person.kills + person.deaths > 0;
+      if (fought) return true;
+      if (person.left || person.late) return false;
+      return Boolean(person.faction);
+    })
     .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+  if (ranked.length > 120) ranked = ranked.filter((person) => person.kills + person.deaths > 0);
+  if (ranked.length > 120) ranked = ranked.slice(0, 120);
   const field = ranked.length;
-  for (const [index, person] of ranked.entries()) {
+  if (!field) {
+    matchAnchors.delete(matchId);
+    return;
+  }
+  const from = endedAt ? new Date(endedAt.getTime() - 15 * 60 * 1000) : null;
+  const to = endedAt ? new Date(endedAt.getTime() + 15 * 60 * 1000) : null;
+  if (from && to) {
+    const ids = ranked.map((person) => person.steamId);
+    const marks = ids.map(() => "?").join(", ");
+    await sql.unsafe(
+      `DELETE FROM played_matches
+       WHERE steam_id IN (${marks}) AND match_key LIKE 'legacy-%' AND result = ''
+         AND ended_at BETWEEN ? AND ?`,
+      [...ids, from, to],
+    );
+  }
+  const values: unknown[] = [];
+  const placeholders: string[] = [];
+  ranked.forEach((person, index) => {
     let weapon = "";
     let best = 0;
     for (const [name, count] of person.weapons) {
@@ -295,41 +407,48 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
         best = count;
       }
     }
-    const crowd = field > 100;
-    const result = crowd ? "" : matchResult(person.faction, winner, false);
-    const from = endedAt ? new Date(endedAt.getTime() - 15 * 60 * 1000) : null;
-    const to = endedAt ? new Date(endedAt.getTime() + 15 * 60 * 1000) : null;
-    if (from && to) {
-      await sql`
-        DELETE FROM played_matches
-        WHERE steam_id = ${person.steamId} AND match_key LIKE 'legacy-%' AND result = ''
-          AND ended_at BETWEEN ${from} AND ${to}
-      `;
-    }
-    await sql`
-      INSERT INTO played_matches (
-        steam_id, match_key, ended_at, server_name, map_name, minutes, faction, result,
-        place, field_size, kills, deaths, headshots, teamkills, weapon
-      ) VALUES (
-        ${person.steamId}, ${matchId}, ${endedAt}, ${server}, ${map}, ${minutes}, ${person.faction}, ${result},
-        ${index + 1}, ${field}, ${person.kills}, ${person.deaths}, ${person.headshots}, ${person.teamkills}, ${weapon}
-      )
-      ON DUPLICATE KEY UPDATE
-        ended_at = VALUES(ended_at),
-        server_name = VALUES(server_name),
-        map_name = VALUES(map_name),
-        minutes = VALUES(minutes),
-        faction = VALUES(faction),
-        result = VALUES(result),
-        place = VALUES(place),
-        field_size = VALUES(field_size),
-        kills = VALUES(kills),
-        deaths = VALUES(deaths),
-        headshots = VALUES(headshots),
-        teamkills = VALUES(teamkills),
-        weapon = VALUES(weapon)
-    `;
-  }
+    const result = matchResult(person.faction, winner, false);
+    placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    values.push(
+      person.steamId,
+      matchId,
+      endedAt,
+      server,
+      map,
+      minutes,
+      person.faction,
+      result,
+      index + 1,
+      field,
+      person.kills,
+      person.deaths,
+      person.headshots,
+      person.teamkills,
+      weapon,
+    );
+  });
+  await sql.unsafe(
+    `INSERT INTO played_matches (
+      steam_id, match_key, ended_at, server_name, map_name, minutes, faction, result,
+      place, field_size, kills, deaths, headshots, teamkills, weapon
+    ) VALUES ${placeholders.join(", ")}
+    ON DUPLICATE KEY UPDATE
+      ended_at = VALUES(ended_at),
+      server_name = VALUES(server_name),
+      map_name = VALUES(map_name),
+      minutes = VALUES(minutes),
+      faction = IF(VALUES(faction) = '', faction, VALUES(faction)),
+      result = IF(VALUES(result) = '', result, VALUES(result)),
+      place = VALUES(place),
+      field_size = VALUES(field_size),
+      kills = VALUES(kills),
+      deaths = VALUES(deaths),
+      headshots = VALUES(headshots),
+      teamkills = VALUES(teamkills),
+      weapon = VALUES(weapon)`,
+    values,
+  );
+  matchAnchors.delete(matchId);
 }
 
 const sampled = new Map<string, number>();
@@ -352,18 +471,45 @@ export async function feedSamples() {
   return sql<Array<{ kind: string; body: string; seen_at: unknown }>>`SELECT kind, body, seen_at FROM feed_samples ORDER BY kind`;
 }
 
+function markFinished(matchId: string) {
+  if (!matchId) return;
+  if (!finished.includes(matchId)) finished.push(matchId);
+  while (finished.length > 40) finished.shift();
+  if (currentMatch === matchId) currentMatch = "";
+  matchAnchors.delete(matchId);
+  forgetScores();
+}
+
+async function closeAndMark(event: FeedEvent, serverName: string, endedAt: Date | null) {
+  const matchId = text(event.matchId, 80) || currentMatch;
+  if (!matchId || finished.includes(matchId)) return;
+  await closeMatch({ ...event, matchId }, serverName, endedAt ?? new Date());
+  markFinished(matchId);
+}
+
 /** Состояние матча, вход, выход и итог. Убийства к этому моменту уже лежат в server_kills. */
 export async function absorbFeed(body: unknown) {
   if (!body || typeof body !== "object") return;
   const batch = body as { serverName?: unknown; events?: unknown };
   const serverName = text(batch.serverName, 80);
   const events = Array.isArray(batch.events) ? batch.events : [];
+  lastFeedAt = Date.now();
   for (const item of events) {
     if (!item || typeof item !== "object") continue;
     const event = item as FeedEvent;
     const matchId = text(event.matchId, 80);
-    const at = when(event.eventTime);
+    const at = wallTime(matchId, event.eventTime) ?? when(event.eventTime);
     await keepSample(event).catch(() => undefined);
+    // Смена matchId без match_ended — закрываем предыдущий, иначе presence раздувается до сотен.
+    if (
+      matchId
+      && currentMatch
+      && matchId !== currentMatch
+      && event.type !== "match_ended"
+      && !finished.includes(currentMatch)
+    ) {
+      await closeAndMark({ matchId: currentMatch, type: "match_ended" }, serverName, at ?? new Date());
+    }
     if (matchId && event.type !== "match_ended" && !finished.includes(matchId)) currentMatch = matchId;
     if (event.type === "match_state" && matchId) {
       await rememberClock(matchId, mapLabel(text(event.mapName, 80)), serverName, text(event.state, 40), at);
@@ -372,15 +518,54 @@ export async function absorbFeed(body: unknown) {
       if (!steamId) continue;
       await touchPresence(matchId, steamId, text(event.playerName, 80), at, event.type === "player_left");
     } else if (event.type === "match_ended") {
-      // В событии может не быть времени: тогда конец матча — момент, когда оно дошло до сайта.
-      await closeMatch(event, serverName, at ?? new Date());
-      const endedId = matchId || currentMatch;
-      if (endedId) {
-        finished.push(endedId);
-        while (finished.length > 20) finished.shift();
-      }
-      if (!matchId || currentMatch === matchId) currentMatch = "";
-      forgetScores();
+      await closeAndMark(event, serverName, at ?? new Date());
     }
   }
+}
+
+/** Ручное/догоняющее закрытие одного матча (бэкфилл). */
+export async function forceCloseMatch(matchId: string, endedAt: Date | null = null) {
+  const id = text(matchId, 80);
+  if (!id) return false;
+  // Разрешаем перезапись пустых результатов.
+  const idx = finished.indexOf(id);
+  if (idx >= 0) finished.splice(idx, 1);
+  // Старые «склеенные» строки (500+) сносим перед пересчётом.
+  await sql`DELETE FROM played_matches WHERE match_key = ${id}`;
+  await closeMatch({ matchId: id, type: "match_ended" }, "", endedAt ?? new Date());
+  markFinished(id);
+  return true;
+}
+
+/** Догоняем матчи, у которых есть киллы, но нет нормальной записи в played_matches. */
+export async function reconcileOpenMatches() {
+  const staleMs = 25 * 60 * 1000;
+  if (currentMatch && lastFeedAt > 0 && Date.now() - lastFeedAt > staleMs && !finished.includes(currentMatch)) {
+    await closeAndMark({ matchId: currentMatch, type: "match_ended" }, "", new Date());
+  }
+  const rows = await sql<Array<{ match_id: string; last_at: Date | null }>>`
+    SELECT k.match_id AS match_id, MAX(COALESCE(k.killed_at, k.received_at)) AS last_at
+    FROM server_kills k
+    WHERE k.match_id <> ''
+      AND COALESCE(k.killed_at, k.received_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY)
+    GROUP BY k.match_id
+    HAVING COUNT(*) >= 20
+  `;
+  let closed = 0;
+  for (const row of rows) {
+    const matchId = text(row.match_id, 80);
+    if (!matchId || finished.includes(matchId) || matchId === currentMatch) continue;
+    const done = await sql<Array<{ n: number }>>`
+      SELECT COUNT(*) AS n FROM played_matches
+      WHERE match_key = ${matchId} AND result IN ('win', 'loss')
+    `;
+    if (Number(done[0]?.n || 0) > 0) continue;
+    const lastAt = when(row.last_at) ?? new Date();
+    // Не трогаем совсем свежий матч — ещё может идти.
+    if (Date.now() - lastAt.getTime() < staleMs) continue;
+    await closeAndMark({ matchId, type: "match_ended" }, "", lastAt);
+    closed += 1;
+    if (closed >= 8) break;
+  }
+  return closed;
 }

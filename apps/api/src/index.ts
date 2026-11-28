@@ -9,7 +9,7 @@ import { clearSession, cookieString, createSession, readSession, writeCookies } 
 import { seedGuides } from "./guides.js";
 import { SEARCH_TAGS } from "./seo.js";
 import { combatCard } from "./combat-card.js";
-import { feedSamples } from "./match-history.js";
+import { feedSamples, reconcileOpenMatches } from "./match-history.js";
 import { bansFromPayload, punishmentsFor, rememberBans, syncBans } from "./punishments.js";
 import { acceptFeed, feedAuthorized, recentKills } from "./kill-feed.js";
 import { fightSnapshot, ingestCombat, rememberLive, squadActivity } from "./server-combat.js";
@@ -2545,6 +2545,9 @@ console.log(`FOB API слушает ${config.port}. Модули: игроки, 
 const pullCombat = () => ingestCombat().then(() => report("бой")).catch((error) => report("бой", error));
 pullCombat();
 setInterval(pullCombat, 20_000).unref();
+const pullMatches = () => reconcileOpenMatches().then((n) => report(n ? `матчи +${n}` : "матчи")).catch((error) => report("матчи", error));
+pullMatches();
+setInterval(pullMatches, 3 * 60_000).unref();
 const pullBans = () => syncBans().then(() => report("баны")).catch((error) => report("баны", error));
 pullBans();
 setInterval(pullBans, 60_000).unref();

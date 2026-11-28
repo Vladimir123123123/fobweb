@@ -441,8 +441,9 @@ async function squadMatchRows(span: ReturnType<typeof moscowWeek>) {
     FROM played_matches p
     LEFT JOIN users u ON u.steam_id = p.steam_id
     WHERE p.ended_at >= ${span.start} AND p.ended_at < ${span.end}
-      AND p.result <> 'leave'
+      AND p.result IN ('win', 'loss')
       AND p.faction <> ''
+      AND p.field_size BETWEEN 2 AND 120
       AND p.steam_id REGEXP '^[0-9]{17}$'
   `;
 }
