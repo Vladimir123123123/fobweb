@@ -1472,6 +1472,90 @@ app.get("/api/bot/squad-week", async (request, reply) => {
   return squadWeekBoard();
 });
 
+app.get("/api/bot/elo", async (request, reply) => {
+  if (!botAuthorized(request)) return notFound(reply);
+  const query = request.query as Record<string, unknown>;
+  const discordId = text(query.discordId, 32);
+  const { eloLevel } = await import("./elo.js");
+  const top = await sql<Array<{
+    steam_id: string;
+    rating: number;
+    games: number;
+    wins: number;
+    losses: number;
+    persona: string | null;
+    discord_id: string | null;
+  }>>`
+    SELECT e.steam_id, e.rating, e.games, e.wins, e.losses, u.persona, u.discord_id
+    FROM player_elo e
+    LEFT JOIN users u ON u.steam_id = e.steam_id
+    WHERE COALESCE(u.hide_leaderboard, 0) = 0
+    ORDER BY e.rating DESC, e.games DESC, e.steam_id ASC
+    LIMIT 100
+  `;
+  const players = top.map((row, index) => ({
+    rank: index + 1,
+    steamId: String(row.steam_id),
+    persona: String(row.persona || row.steam_id),
+    rating: Number(row.rating) || 0,
+    level: eloLevel(Number(row.rating) || 0),
+    games: Number(row.games) || 0,
+    wins: Number(row.wins) || 0,
+    losses: Number(row.losses) || 0,
+    discordId: row.discord_id ? String(row.discord_id) : "",
+  }));
+  let me: null | {
+    rank: number;
+    steamId: string;
+    persona: string;
+    rating: number;
+    level: number;
+    games: number;
+    wins: number;
+    losses: number;
+    inTop: boolean;
+  } = null;
+  if (/^\d{5,32}$/.test(discordId)) {
+    const rows = await sql<Array<{
+      steam_id: string;
+      rating: number;
+      games: number;
+      wins: number;
+      losses: number;
+      persona: string | null;
+    }>>`
+      SELECT e.steam_id, e.rating, e.games, e.wins, e.losses, u.persona
+      FROM player_elo e
+      JOIN users u ON u.steam_id = e.steam_id
+      WHERE u.discord_id = ${discordId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (row) {
+      const rating = Number(row.rating) || 0;
+      const ahead = await sql<Array<{ n: number }>>`
+        SELECT COUNT(*) AS n FROM player_elo
+        WHERE rating > ${rating}
+           OR (rating = ${rating} AND (games > ${Number(row.games) || 0}
+             OR (games = ${Number(row.games) || 0} AND steam_id < ${String(row.steam_id)})))
+      `;
+      const rank = Number(ahead[0]?.n || 0) + 1;
+      me = {
+        rank,
+        steamId: String(row.steam_id),
+        persona: String(row.persona || row.steam_id),
+        rating,
+        level: eloLevel(rating),
+        games: Number(row.games) || 0,
+        wins: Number(row.wins) || 0,
+        losses: Number(row.losses) || 0,
+        inTop: rank <= 100,
+      };
+    }
+  }
+  return { season: config.season, players, me, total: players.length };
+});
+
 app.get("/api/bot/board", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   const query = request.query as Record<string, unknown>;
