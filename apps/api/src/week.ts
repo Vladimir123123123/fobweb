@@ -386,9 +386,12 @@ export async function squadWeekBoard(now = new Date()) {
         const winrate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
         const topPlayers = [...pack.players.values()]
           .sort((a, b) => {
+            // Лучшие — по убийствам, при равенстве по К/Д.
+            const kills = b.kills - a.kills;
+            if (kills) return kills;
             const kd = (b.deaths > 0 ? b.kills / b.deaths : b.kills) - (a.deaths > 0 ? a.kills / a.deaths : a.kills);
             if (Math.abs(kd) > 1e-9) return kd;
-            return b.kills - a.kills || a.name.localeCompare(b.name, "ru");
+            return a.name.localeCompare(b.name, "ru");
           })
           .slice(0, 5)
           .map((row, index) => ({
@@ -409,13 +412,22 @@ export async function squadWeekBoard(now = new Date()) {
           topPlayers,
         };
       })
-      .sort((a, b) => b.wins - a.wins || b.winrate - a.winrate || b.games - a.games || a.tag.localeCompare(b.tag, "ru"))
+      // Сначала винрейт, потом победы, потом число зачётных игр.
+      .sort((a, b) => b.winrate - a.winrate || b.wins - a.wins || b.games - a.games || a.tag.localeCompare(b.tag, "ru"))
       .map((row, index) => ({ place: index + 1, ...row }));
     return { span, squads };
   }
 
+  // Закрытая неделя, если в ней есть зачёт; иначе текущая (чтобы не висела пустая/старая картина).
   let built = await build(closed);
   if (!built.squads.length) built = await build(current);
+  // Если закрытая почти пустая (1 матч), а текущая уже богаче — берём текущую для живой картины.
+  if (built.span.closed) {
+    const live = await build(current);
+    const closedGames = built.squads.reduce((sum, row) => sum + row.games, 0);
+    const liveGames = live.squads.reduce((sum, row) => sum + row.games, 0);
+    if (liveGames >= Math.max(3, closedGames * 2)) built = live;
+  }
   const { span, squads } = built;
 
   return {
