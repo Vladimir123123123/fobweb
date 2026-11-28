@@ -93,7 +93,7 @@ const F=document.querySelector("#profile"),xe=JSON.parse(F.getAttribute("data-gu
           ${_.length?`<section class="match-log">
             <header>
               <p class="eyebrow">Матчи</p>
-              <p>Сезон · от 15 минут в матче · этот сервер</p>
+              <p>Сезон · от 80 игроков · 15+ мин · этот сервер</p>
             </header>
             <div class="match-scroll">
               <table>
