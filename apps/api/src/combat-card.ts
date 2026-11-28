@@ -81,9 +81,8 @@ const seasonClause = `AND (season = '' OR season = ?)`;
 // Старые записи часто без minutes — не режем их нулём. Новые: от 15 минут в матче.
 const playClause = `AND (minutes IS NULL OR minutes >= ${MIN_PLAY_MINUTES})`;
 const decidedClause = `AND result IN ('win', 'loss')`;
-// 2…120: отсекаем раздутый presence (>120). Винрейт — от 80.
-const fieldHistoryClause = `AND COALESCE(field_size, 0) BETWEEN 2 AND 120`;
-const fieldWinClause = `AND COALESCE(field_size, 0) BETWEEN ${MIN_FIELD_WINRATE} AND 120`;
+// История, винрейт, форма — только матчи с ≥80 на закрытии; верх 120 режет раздутый presence.
+const fieldOkClause = `AND COALESCE(field_size, 0) BETWEEN ${MIN_FIELD_WINRATE} AND 120`;
 
 /** Карточка боя на нашем сервере: счёт из ростера, оружие и дистанции из киллфида. */
 export async function combatCard(steamId: string): Promise<CombatCard | null> {
@@ -160,7 +159,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
        ${seasonClause}
        ${playClause}
        ${decidedClause}
-       ${fieldHistoryClause}
+       ${fieldOkClause}
        AND (map_name <> '' OR result <> '')
      ORDER BY ended_at IS NULL, ended_at DESC, id DESC
      LIMIT 80`,
@@ -172,7 +171,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
        ${seasonClause}
        ${playClause}
        ${decidedClause}
-       ${fieldWinClause}
+       ${fieldOkClause}
      ORDER BY ended_at IS NULL, ended_at DESC, id DESC
      LIMIT 10`,
     [steamId, season],
@@ -184,7 +183,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
        ${seasonClause}
        ${playClause}
        ${decidedClause}
-       ${fieldWinClause}`,
+       ${fieldOkClause}`,
     [steamId, season],
   );
   const history = historyRows.map((item) => {
@@ -213,7 +212,7 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
      WHERE steam_id = ?
        ${seasonClause}
        ${playClause}
-       ${fieldHistoryClause}
+       ${fieldOkClause}
        AND faction <> ''
        AND (map_name <> '' OR result <> '')
      GROUP BY faction
