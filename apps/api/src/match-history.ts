@@ -1,6 +1,10 @@
+import { config } from "./config.js";
 import { sql } from "./db.js";
+import { matchResult, playMinutesOf, MIN_PLAY_MINUTES } from "./match-rules.js";
 import { knownPlayer } from "./roster-cache.js";
 import { cleanSide, sideKeyOf, type SideKey } from "./sides.js";
+
+export { MIN_FIELD_WINRATE, MIN_PLAY_MINUTES, matchResult, playMinutesOf } from "./match-rules.js";
 
 type FeedEvent = Record<string, unknown>;
 
@@ -56,15 +60,6 @@ function sane(date: Date) {
 export function mapLabel(raw: string) {
   const head = raw.trim().split(/[_\s]/)[0] || "";
   return head.slice(0, 80);
-}
-
-/** Победа или поражение. Сторона сравнивается по ключу, «White» и пустое результата не дают. */
-export function matchResult(faction: string, winner: string, left: boolean) {
-  if (left) return "leave";
-  const mine = sideKeyOf(faction);
-  const won = sideKeyOf(winner);
-  if (!mine || !won) return "";
-  return mine === won ? "win" : "loss";
 }
 
 // ───── Очки сторон: запасной способ узнать победителя, если игра не назвала его ─────
@@ -231,6 +226,7 @@ type Person = {
   faction: string;
   left: boolean;
   late: boolean;
+  playMinutes: number | null;
   kills: number;
   deaths: number;
   headshots: number;
@@ -333,6 +329,7 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
       faction: cleanSide(known?.faction),
       left: false,
       late: false,
+      playMinutes: null,
       kills: 0,
       deaths: 0,
       headshots: 0,
@@ -348,7 +345,9 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     if (side) person.faction = side;
     person.left = Boolean(row.left_at);
     const seen = when(row.first_seen);
+    const leftAt = when(row.left_at);
     if (lateAfter && seen && seen.getTime() > lateAfter.getTime()) person.late = true;
+    person.playMinutes = playMinutesOf(seen, leftAt, started, endedAt, person.left);
   }
   for (const row of killStats) {
     const person = ensure(row.steam_id, row.name);
@@ -358,6 +357,9 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     person.teamkills += Number(row.teamkills) || 0;
     const weapon = String(row.weapon || "").trim();
     if (weapon) person.weapons.set(weapon, (person.weapons.get(weapon) || 0) + 1);
+    if (person.playMinutes == null) {
+      person.playMinutes = playMinutesOf(null, null, started, endedAt, person.left);
+    }
   }
   if (!winner) {
     const bySide = new Map<SideKey, number>();
@@ -368,19 +370,15 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     }
     winner = leaderOf(bySide);
   }
-  // Presence копит ротацию. В историю — кто дрался; без боя только если не вышел и не опоздал.
+  // В историю — кто был ≥15 минут (не обязательно от начала до конца).
   let ranked = [...people.values()]
-    .filter((person) => {
-      const fought = person.kills + person.deaths > 0;
-      if (fought) return true;
-      if (person.left || person.late) return false;
-      return Boolean(person.faction);
-    })
+    .filter((person) => (person.playMinutes ?? 0) >= MIN_PLAY_MINUTES && Boolean(person.faction || person.kills + person.deaths > 0))
     .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
   if (ranked.length > 120) ranked = ranked.filter((person) => person.kills + person.deaths > 0);
   if (ranked.length > 120) ranked = ranked.slice(0, 120);
-  const field = ranked.length;
-  if (!field) {
+  const onlineAtEnd = present.filter((row) => !row.left_at).length;
+  const field = Math.max(ranked.length, onlineAtEnd);
+  if (!ranked.length) {
     matchAnchors.delete(matchId);
     return;
   }
@@ -396,6 +394,7 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
       [...ids, from, to],
     );
   }
+  const season = config.season;
   const values: unknown[] = [];
   const placeholders: string[] = [];
   ranked.forEach((person, index) => {
@@ -407,15 +406,16 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
         best = count;
       }
     }
-    const result = matchResult(person.faction, winner, person.left);
-    placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    const played = person.playMinutes ?? minutes;
+    const result = matchResult(person.faction, winner, person.left, played);
+    placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     values.push(
       person.steamId,
       matchId,
       endedAt,
       server,
       map,
-      minutes,
+      played,
       person.faction,
       result,
       index + 1,
@@ -425,12 +425,13 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
       person.headshots,
       person.teamkills,
       weapon,
+      season,
     );
   });
   await sql.unsafe(
     `INSERT INTO played_matches (
       steam_id, match_key, ended_at, server_name, map_name, minutes, faction, result,
-      place, field_size, kills, deaths, headshots, teamkills, weapon
+      place, field_size, kills, deaths, headshots, teamkills, weapon, season
     ) VALUES ${placeholders.join(", ")}
     ON DUPLICATE KEY UPDATE
       ended_at = VALUES(ended_at),
@@ -445,7 +446,8 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
       deaths = VALUES(deaths),
       headshots = VALUES(headshots),
       teamkills = VALUES(teamkills),
-      weapon = VALUES(weapon)`,
+      weapon = VALUES(weapon),
+      season = IF(VALUES(season) = '', season, VALUES(season))`,
     values,
   );
   matchAnchors.delete(matchId);

@@ -175,9 +175,9 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
       } | null;
       const resultLabel = (result: string | undefined) => result === "win" ? "Победа" : result === "loss" ? "Поражение" : result === "leave" ? "Досрочный выход" : "—";
       const resultClass = (result: string | undefined) => result === "win" ? "win" : result === "loss" ? "loss" : "";
-      // API уже отдаёт только полные матчи (win/loss); leave и пустые отфильтрованы.
+      // API: сезон, ≥15 мин; винрейт отдельно (field ≥80).
       const matches = (combat?.history ?? []).filter((item) => item.result === "win" || item.result === "loss");
-      const matchTotal = combat?.winGames ?? matches.length;
+      const matchTotal = matches.length;
       const punishments = (profile.punishments ?? []) as Array<{ kind?: string; reason?: string; startedAt?: string | null; untilAt?: string | null; active?: boolean; liftedAt?: string | null }>;
       const term = (item: { untilAt?: string | null; active?: boolean; liftedAt?: string | null }) => item.untilAt ? `до ${stamp(item.untilAt)}` : item.active ? "до снятия" : item.liftedAt ? `снято ${stamp(item.liftedAt)}` : "—";
       const portraits: Record<string, string> = {
@@ -336,7 +336,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
                   <b>${combat.winrate == null ? "—" : `${Number(combat.winrate).toFixed(0)}%`}</b>
                 </div>
                 <span>Винрейт · последние 10</span>
-                <small>${Number(combat.winGames) > 0 ? `${num(combat.winGames)} полных ${Number(combat.winGames) === 1 ? "матч" : Number(combat.winGames) < 5 ? "матча" : "матчей"}` : "После матча от начала до конца"}</small>
+                <small>${Number(combat.winGames) > 0 ? `${num(combat.winGames)} ${Number(combat.winGames) === 1 ? "матч" : Number(combat.winGames) < 5 ? "матча" : "матчей"} · от 80 игроков` : "Матчи от 80 игроков, 15+ мин"}</small>
                 ${(combat.form ?? []).length ? `<div class="form" role="img" aria-label="Последние игры">${(combat.form ?? []).slice().reverse().map((item) => `<i class="${item === "win" ? "win" : "loss"}" title="${item === "win" ? "Победа" : "Поражение"}"></i>`).join("")}</div>` : ""}
               </div>
               <div class="tile">
@@ -372,7 +372,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
           ${matches.length ? `<section class="match-log">
             <header>
               <p class="eyebrow">Матчи</p>
-              <p>Только от начала до конца · этот сервер</p>
+              <p>Сезон · от 15 минут в матче · этот сервер</p>
             </header>
             <div class="match-scroll">
               <table>

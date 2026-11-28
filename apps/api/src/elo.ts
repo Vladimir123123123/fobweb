@@ -1,4 +1,5 @@
 import { sql } from "./db.js";
+import { MIN_FIELD_WINRATE, MIN_PLAY_MINUTES } from "./match-rules.js";
 
 export const ELO_START = 1000;
 const ELO_K = 24;
@@ -108,7 +109,8 @@ export async function applyMatchElo(matchKey: string) {
       AND result IN ('win', 'loss')
       AND faction <> ''
       AND steam_id REGEXP '^[0-9]{17}$'
-      AND COALESCE(field_size, 0) BETWEEN 2 AND 120
+      AND COALESCE(field_size, 0) >= ${MIN_FIELD_WINRATE}
+      AND COALESCE(minutes, 0) >= ${MIN_PLAY_MINUTES}
   `;
   if (rows.length < 4) {
     await sql`INSERT IGNORE INTO elo_applied (match_key) VALUES (${id})`;
@@ -180,7 +182,8 @@ export async function recomputeAllElo() {
     FROM played_matches
     WHERE result IN ('win', 'loss')
       AND match_key NOT LIKE 'legacy-%'
-      AND COALESCE(field_size, 0) BETWEEN 2 AND 120
+      AND COALESCE(field_size, 0) >= ${MIN_FIELD_WINRATE}
+      AND COALESCE(minutes, 0) >= ${MIN_PLAY_MINUTES}
     GROUP BY match_key
     HAVING SUM(result = 'win') > 0 AND SUM(result = 'loss') > 0
     ORDER BY MIN(ended_at) ASC, match_key ASC
@@ -194,7 +197,7 @@ export async function recomputeAllElo() {
 
 export async function ensureEloBootstrap() {
   await ensureTables();
-  const mark = await sql`INSERT IGNORE INTO feed_keys (name, value) VALUES ('elo-v1', '1')`;
+  const mark = await sql`INSERT IGNORE INTO feed_keys (name, value) VALUES ('elo-v2', '1')`;
   if (!mark.length) return 0;
   return recomputeAllElo();
 }

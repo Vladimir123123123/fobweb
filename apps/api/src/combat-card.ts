@@ -1,4 +1,6 @@
+import { config } from "./config.js";
 import { sql } from "./db.js";
+import { MIN_FIELD_WINRATE, MIN_PLAY_MINUTES } from "./match-rules.js";
 import { cleanSide } from "./sides.js";
 
 export type CombatCard = {
@@ -75,9 +77,15 @@ function person(name: unknown, count: unknown) {
   return label && times > 0 ? { name: label, count: times } : null;
 }
 
+const seasonClause = `AND (season = '' OR season = ?)`;
+const playClause = `AND COALESCE(minutes, 0) >= ${MIN_PLAY_MINUTES}`;
+const decidedClause = `AND result IN ('win', 'loss')`;
+const fieldWinClause = `AND COALESCE(field_size, 0) >= ${MIN_FIELD_WINRATE}`;
+
 /** Карточка боя на нашем сервере: счёт из ростера, оружие и дистанции из киллфида. */
 export async function combatCard(steamId: string): Promise<CombatCard | null> {
   if (!/^\d{17}$/.test(steamId)) return null;
+  const season = config.season;
   const rows = await sql<Array<{
     kills: number;
     deaths: number;
@@ -140,29 +148,41 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const deathRows = await sql<Array<{ n: number }>>`
     SELECT COUNT(*) AS n FROM server_kills WHERE victim_steam = ${steamId}
   `;
-  // Только матчи от начала до конца (не досрочный выход). Винрейт — по ним же.
-  const historyRows = await sql<Array<Record<string, unknown>>>`
-    SELECT ended_at, server_name, map_name, minutes, faction, result, place, field_size,
-           kills, deaths, headshots, teamkills, weapon
-    FROM played_matches
-    WHERE steam_id = ${steamId}
-      AND field_size BETWEEN 2 AND 120
-      AND result IN ('win', 'loss')
-      AND (map_name <> '' OR result <> '')
-    ORDER BY ended_at IS NULL, ended_at DESC, id DESC
-    LIMIT 40
-  `;
-  const lastRows = await sql<Array<{ result: string }>>`
-    SELECT result FROM played_matches
-    WHERE steam_id = ${steamId} AND result IN ('win', 'loss') AND field_size BETWEEN 2 AND 120
-    ORDER BY ended_at IS NULL, ended_at DESC, id DESC
-    LIMIT 10
-  `;
-  const rateRows = await sql<Array<{ n: number; best: number | null }>>`
-    SELECT COUNT(*) AS n, MAX(kills) AS best
-    FROM played_matches
-    WHERE steam_id = ${steamId} AND result IN ('win', 'loss') AND field_size BETWEEN 2 AND 120
-  `;
+  // История сезона: ≥15 мин в матче. Винрейт — те же + field ≥80.
+  const historyRows = await sql.unsafe<Array<Record<string, unknown>>>(
+    `SELECT ended_at, server_name, map_name, minutes, faction, result, place, field_size,
+            kills, deaths, headshots, teamkills, weapon
+     FROM played_matches
+     WHERE steam_id = ?
+       ${seasonClause}
+       ${playClause}
+       ${decidedClause}
+       AND (map_name <> '' OR result <> '')
+     ORDER BY ended_at IS NULL, ended_at DESC, id DESC
+     LIMIT 80`,
+    [steamId, season],
+  );
+  const lastRows = await sql.unsafe<Array<{ result: string }>>(
+    `SELECT result FROM played_matches
+     WHERE steam_id = ?
+       ${seasonClause}
+       ${playClause}
+       ${decidedClause}
+       ${fieldWinClause}
+     ORDER BY ended_at IS NULL, ended_at DESC, id DESC
+     LIMIT 10`,
+    [steamId, season],
+  );
+  const rateRows = await sql.unsafe<Array<{ n: number; best: number | null }>>(
+    `SELECT COUNT(*) AS n, MAX(kills) AS best
+     FROM played_matches
+     WHERE steam_id = ?
+       ${seasonClause}
+       ${playClause}
+       ${decidedClause}
+       ${fieldWinClause}`,
+    [steamId, season],
+  );
   const history = historyRows.map((item) => {
     const kills = num(item.kills);
     const deaths = num(item.deaths);
@@ -183,14 +203,19 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
       weapon: String(item.weapon || ""),
     };
   });
-  const favoriteRows = await sql<Array<{ faction: string }>>`
-    SELECT faction
-    FROM played_matches
-    WHERE steam_id = ${steamId} AND faction <> '' AND field_size BETWEEN 2 AND 120 AND (map_name <> '' OR result <> '')
-    GROUP BY faction
-    ORDER BY COUNT(*) DESC, MAX(ended_at) DESC
-    LIMIT 1
-  `;
+  const favoriteRows = await sql.unsafe<Array<{ faction: string }>>(
+    `SELECT faction
+     FROM played_matches
+     WHERE steam_id = ?
+       ${seasonClause}
+       ${playClause}
+       AND faction <> ''
+       AND (map_name <> '' OR result <> '')
+     GROUP BY faction
+     ORDER BY COUNT(*) DESC, MAX(ended_at) DESC
+     LIMIT 1`,
+    [steamId, season],
+  );
   const form = lastRows.map((item) => (item.result === "win" ? "win" : "loss") as "win" | "loss");
   const decided = form.length;
   const wins = form.filter((item) => item === "win").length;

@@ -103,6 +103,49 @@ export async function migrate() {
   await ensureColumn("server_kills", "received_at", "datetime(3) NULL");
   await ensureColumn("auth_jobs", "reward", "smallint NOT NULL DEFAULT -1");
   await ensureColumn("quest_runs", "announced", "tinyint NOT NULL DEFAULT 0");
+  await ensureColumn("played_matches", "season", "varchar(8) NOT NULL DEFAULT ''");
+  await sql.unsafe(
+    `UPDATE played_matches SET season = ? WHERE season = '' OR season IS NULL`,
+    [config.season],
+  );
+  // leave → win/loss, если по presence игрок был ≥15 минут; минуты — фактическое время в матче.
+  const leaveFix = await sql`INSERT IGNORE INTO feed_keys (name, value) VALUES ('fix-leave-15m-1', '1')`;
+  if (leaveFix.length) {
+    await sql.unsafe(`
+      UPDATE played_matches pm
+      JOIN match_presence mp ON mp.match_id = pm.match_key AND mp.steam_id = pm.steam_id
+      JOIN match_clock mc ON mc.match_id = pm.match_key
+      JOIN (
+        SELECT match_key, SUBSTRING_INDEX(GROUP_CONCAT(faction ORDER BY result = 'win' DESC), ',', 1) AS win_side
+        FROM played_matches
+        WHERE result = 'win' AND faction <> ''
+        GROUP BY match_key
+      ) w ON w.match_key = pm.match_key
+      SET
+        pm.minutes = GREATEST(
+          0,
+          TIMESTAMPDIFF(
+            MINUTE,
+            COALESCE(mp.first_seen, mc.started_at),
+            COALESCE(mp.left_at, pm.ended_at, UTC_TIMESTAMP(3))
+          )
+        ),
+        pm.result = CASE
+          WHEN LOWER(pm.faction) REGEXP 'lone|star' AND LOWER(w.win_side) REGEXP 'lone|star' THEN 'win'
+          WHEN LOWER(pm.faction) REGEXP 'valk' AND LOWER(w.win_side) REGEXP 'valk' THEN 'win'
+          WHEN LOWER(pm.faction) REGEXP 'mant' AND LOWER(w.win_side) REGEXP 'mant' THEN 'win'
+          WHEN pm.faction <> '' AND w.win_side <> '' THEN 'loss'
+          ELSE pm.result
+        END
+      WHERE pm.result = 'leave'
+        AND pm.faction <> ''
+        AND TIMESTAMPDIFF(
+          MINUTE,
+          COALESCE(mp.first_seen, mc.started_at),
+          COALESCE(mp.left_at, pm.ended_at, UTC_TIMESTAMP(3))
+        ) >= 15
+    `);
+  }
   await sql`UPDATE server_combat SET first_seen = seen_at WHERE first_seen IS NULL`;
   await sql`
     UPDATE server_combat c

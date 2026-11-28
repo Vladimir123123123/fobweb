@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS played_matches (
   headshots int NOT NULL DEFAULT 0,
   teamkills int NOT NULL DEFAULT 0,
   weapon varchar(80) NOT NULL DEFAULT '',
+  season varchar(8) NOT NULL DEFAULT '',
   UNIQUE KEY played_match_player (steam_id, match_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
