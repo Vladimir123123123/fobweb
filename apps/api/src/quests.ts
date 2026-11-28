@@ -24,9 +24,12 @@ export type QuestInput = {
   endsAt: string | null;
 };
 
+/** После «Забрать награду» квест снова доступен через сутки. */
+export const QUEST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
 export const QUEST_TEMPLATES: QuestInput[] = [
   { title: "Первая кровь", body: "Любые 3 убийства. Быстрый старт.", kills: 3, difficulty: "easy", repeat: "once", xp: 50, coins: 15, minMeters: 0, maxMeters: 0, headshot: false, weapon: "", status: "draft", startsAt: null, endsAt: null },
-  { title: "Разминка", body: "Любые 10 убийств.", kills: 10, difficulty: "easy", repeat: "weekly", xp: 50, coins: 20, minMeters: 0, maxMeters: 0, headshot: false, weapon: "", status: "draft", startsAt: null, endsAt: null },
+  { title: "Разминка", body: "Любые 10 убийств.", kills: 10, difficulty: "easy", repeat: "once", xp: 50, coins: 20, minMeters: 0, maxMeters: 0, headshot: false, weapon: "", status: "draft", startsAt: null, endsAt: null },
   { title: "Ближний бой", body: "10 убийств из дробовика не дальше 30 м.", kills: 10, difficulty: "mid", repeat: "once", xp: 100, coins: 40, minMeters: 0, maxMeters: 30, headshot: false, weapon: "дробовик, shotgun", status: "draft", startsAt: null, endsAt: null },
   { title: "За Valkyra", body: "30 убийств.", kills: 30, difficulty: "mid", repeat: "once", xp: 100, coins: 40, minMeters: 0, maxMeters: 0, headshot: false, weapon: "", status: "draft", startsAt: null, endsAt: null },
   { title: "Тяжёлая артиллерия", body: "15 убийств из техники, станков, гранатомётов или взрывчатки.", kills: 15, difficulty: "mid", repeat: "once", xp: 150, coins: 50, minMeters: 0, maxMeters: 0, headshot: false, weapon: "техника, гранат, взрыв, мина, littlebird, havoc, humvee", status: "draft", startsAt: null, endsAt: null },
@@ -57,7 +60,14 @@ type QuestRow = {
   ends_at: string | null;
 };
 
-type RunRow = { id: number; quest_id: number; status: string; started_at: string; period_key: string };
+type RunRow = {
+  id: number;
+  quest_id: number;
+  status: string;
+  started_at: string;
+  period_key: string;
+  done_at?: string | Date | null;
+};
 
 export function communityRank(xp: number) {
   const safe = Math.max(0, Math.floor(Number(xp) || 0));
@@ -67,6 +77,7 @@ export function communityRank(xp: number) {
   return { level, into, need: LEVEL_STEP, xp: stored, maxed: level >= LEVEL_CAP };
 }
 
+/** Старые weekly/monthly оставлены в админке; зачёт у всех — через 24 ч после награды. */
 export function periodKey(kind: string, now = new Date()) {
   if (kind === "weekly") {
     const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -77,7 +88,14 @@ export function periodKey(kind: string, now = new Date()) {
     return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
   }
   if (kind === "monthly") return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-  return "once";
+  return `r-${now.getTime()}`;
+}
+
+export function cooldownLeftMs(doneAt: unknown, now = Date.now()) {
+  if (doneAt == null || doneAt === "") return 0;
+  const at = doneAt instanceof Date ? doneAt.getTime() : new Date(String(doneAt)).getTime();
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, at + QUEST_COOLDOWN_MS - now);
 }
 
 function clip(value: unknown, max: number) {
@@ -277,13 +295,22 @@ async function settle(steamId: string) {
 }
 
 function card(row: QuestRow, run: RunRow | undefined, progress: number) {
+  const left = run?.status === "done" ? cooldownLeftMs(run.done_at) : 0;
+  const state =
+    run?.status === "ready"
+      ? "ready"
+      : run?.status === "active"
+        ? "active"
+        : run?.status === "done" && left > 0
+          ? "cooldown"
+          : "open";
   return {
     id: Number(row.id),
     title: row.title,
     body: row.body,
     kills: Number(row.kills),
     difficulty: row.difficulty,
-    repeat: row.repeat_kind,
+    repeat: "once",
     xp: Number(row.xp),
     coins: Number(row.coins),
     minMeters: Number(row.min_meters) || 0,
@@ -292,9 +319,20 @@ function card(row: QuestRow, run: RunRow | undefined, progress: number) {
     weapon: row.weapon || "",
     startsAt: row.starts_at,
     endsAt: row.ends_at,
-    state: run?.status === "done" ? "done" : run?.status === "ready" ? "ready" : run ? "active" : "open",
-    progress: run?.status === "done" || run?.status === "ready" ? Number(row.kills) : progress,
+    state,
+    progress: state === "ready" || state === "cooldown" ? Number(row.kills) : progress,
+    retryIn: state === "cooldown" ? Math.ceil(left / 1000) : 0,
   };
+}
+
+function latestRun(runs: RunRow[], questId: number) {
+  const mine = runs.filter((run) => Number(run.quest_id) === questId);
+  const open = mine.find((run) => run.status === "active" || run.status === "ready");
+  if (open) return open;
+  const done = mine
+    .filter((run) => run.status === "done")
+    .sort((a, b) => Number(b.id) - Number(a.id))[0];
+  return done;
 }
 
 export async function publicQuests(steamId: string | null) {
@@ -308,15 +346,14 @@ export async function publicQuests(steamId: string | null) {
     ORDER BY id DESC
   `;
   const runs = steamId
-    ? await sql<RunRow[]>`SELECT id, quest_id, status, started_at, period_key FROM quest_runs WHERE steam_id = ${steamId}`
+    ? await sql<RunRow[]>`SELECT id, quest_id, status, started_at, period_key, done_at FROM quest_runs WHERE steam_id = ${steamId}`
     : [];
   const wallet = steamId
     ? (await sql<Array<{ xp: number; coins: number }>>`SELECT xp, coins FROM community WHERE steam_id = ${steamId}`)[0]
     : undefined;
   const cards = [];
   for (const quest of quests) {
-    const key = periodKey(quest.repeat_kind);
-    const current = runs.find((run) => Number(run.quest_id) === Number(quest.id) && run.period_key === key);
+    const current = latestRun(runs, Number(quest.id));
     let progress = 0;
     if (current && current.status === "active") {
       progress = await killCount(steamId || "", current.started_at, quest.ends_at, {
@@ -342,20 +379,29 @@ export async function startQuest(steamId: string, questId: number) {
   `;
   const quest = quests[0];
   if (!quest) return { error: "closed" as const };
-  const key = periodKey(quest.repeat_kind);
-  const existing = await sql<RunRow[]>`
-    SELECT id, quest_id, status, started_at, period_key
+  const open = await sql<RunRow[]>`
+    SELECT id, quest_id, status, started_at, period_key, done_at
     FROM quest_runs
-    WHERE quest_id = ${questId} AND steam_id = ${steamId} AND period_key = ${key}
+    WHERE quest_id = ${questId} AND steam_id = ${steamId} AND status IN ('active', 'ready')
+    ORDER BY id DESC
+    LIMIT 1
   `;
-  if (existing[0]?.status === "done") return { error: "done" as const };
-  if (existing[0]?.status === "ready") return { error: "ready" as const };
-  if (!existing[0]) {
-    await sql`
-      INSERT INTO quest_runs (quest_id, steam_id, period_key, status)
-      VALUES (${questId}, ${steamId}, ${key}, 'active')
-    `;
-  }
+  if (open[0]?.status === "ready") return { error: "ready" as const };
+  if (open[0]?.status === "active") return { error: "" as const };
+  const lastDone = await sql<Array<{ done_at: string | Date | null }>>`
+    SELECT done_at
+    FROM quest_runs
+    WHERE quest_id = ${questId} AND steam_id = ${steamId} AND status = 'done' AND done_at IS NOT NULL
+    ORDER BY done_at DESC
+    LIMIT 1
+  `;
+  const left = cooldownLeftMs(lastDone[0]?.done_at);
+  if (left > 0) return { error: "cooldown" as const, retryIn: Math.ceil(left / 1000) };
+  const key = periodKey("once");
+  await sql`
+    INSERT INTO quest_runs (quest_id, steam_id, period_key, status)
+    VALUES (${questId}, ${steamId}, ${key}, 'active')
+  `;
   return { error: "" as const };
 }
 
@@ -366,16 +412,26 @@ export async function claimQuest(steamId: string, questId: number) {
   `;
   const quest = keyRows[0];
   if (!quest) return { error: "closed" as const };
-  const key = periodKey(quest.repeat_kind);
   const runs = await sql<RunRow[]>`
-    SELECT id, quest_id, status, started_at, period_key
+    SELECT id, quest_id, status, started_at, period_key, done_at
     FROM quest_runs
-    WHERE quest_id = ${questId} AND steam_id = ${steamId} AND period_key = ${key}
+    WHERE quest_id = ${questId} AND steam_id = ${steamId} AND status = 'ready'
+    ORDER BY id DESC
+    LIMIT 1
   `;
   const run = runs[0];
-  if (!run) return { error: "wait" as const };
-  if (run.status === "done") return { error: "done" as const };
-  if (run.status !== "ready") return { error: "wait" as const };
+  if (!run) {
+    const done = await sql<RunRow[]>`
+      SELECT id, quest_id, status, started_at, period_key, done_at
+      FROM quest_runs
+      WHERE quest_id = ${questId} AND steam_id = ${steamId} AND status = 'done'
+      ORDER BY id DESC
+      LIMIT 1
+    `;
+    if (done[0] && cooldownLeftMs(done[0].done_at) > 0) return { error: "cooldown" as const };
+    if (done[0]) return { error: "done" as const };
+    return { error: "wait" as const };
+  }
   const paid = await award(Number(run.id), steamId, Number(quest.xp) || 0, Number(quest.coins) || 0);
   if (!paid) return { error: "done" as const };
   return { error: "" as const };

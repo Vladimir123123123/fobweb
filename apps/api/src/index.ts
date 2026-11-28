@@ -2090,7 +2090,9 @@ app.post("/api/quests/:id/start", async (request, reply) => {
   const id = Number((request.params as { id: string }).id);
   if (!Number.isInteger(id) || id < 1) return notFound(reply);
   const result = await startQuest(steamId, id);
-  if (result.error) return reply.code(409).send({ error: result.error });
+  if (result.error) {
+    return reply.code(409).send({ error: result.error, retryIn: result.retryIn ?? 0 });
+  }
   return publicQuests(steamId);
 });
 
@@ -2115,7 +2117,9 @@ app.post("/api/bot/quests/:id/start", async (request, reply) => {
   const discordId = text(asObject(request.body)?.discordId, 24);
   if (!Number.isInteger(id) || id < 1 || !/^\d{8,20}$/.test(discordId)) return reply.code(400).send({ error: "bad_request" });
   const result = await startQuestByDiscord(discordId, id);
-  if (result.error) return reply.code(409).send({ error: result.error });
+  if (result.error) {
+    return reply.code(409).send({ error: result.error, retryIn: result.retryIn ?? 0 });
+  }
   return { ok: true };
 });
 

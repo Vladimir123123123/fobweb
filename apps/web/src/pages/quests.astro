@@ -4,7 +4,15 @@ import Base from "../layouts/Base.astro";
 <Base title="Квесты — WARDOGS СНГ" description="Квесты сервера FOB. После входа через Steam убийства на сервере приносят опыт и очки сообщества.">
   <p class="eyebrow">Сообщество</p>
   <h1>Квесты</h1>
-  <p class="lead">Запусти квест и выполняй его на сервере FOB. Когда убийства собраны, на карточке появляется кнопка «Забрать награду»: опыт и очки приходят после неё. Очки за квест приходят вам и, если вы в составе сквада, столько же в казну сквада. На сервере каждое убийство даёт 0.2 очка (стрик без смерти +10% к награде за следующий килл), хедшот +0.5, смерть −0.7 (тоже со стриком +10%), тимкилл −10. Очки с сида и за кнопку «Обновить статистику» остаются только вашими. Личный VIP покупается ниже. Клановый слот дороже: его берёт лидер или заместитель из казны и сам выбирает, кому выдать.</p>
+  <div class="quest-intro glass-card">
+    <p>Запусти квест и выполняй его на сервере FOB. Когда убийства собраны — нажми «Забрать награду»: опыт и очки приходят после неё. Повтор того же квеста — через 24 часа.</p>
+    <p>Очки за квест идут вам и, если вы в скваде, столько же в казну. Очки с сида и «Обновить статистику» — только личные.</p>
+    <ul class="quest-combat">
+      <li>Килл <b class="hi">+0.2</b> · стрик без смерти <b class="hi">+10%</b></li>
+      <li>Хедшот <b class="hi">+0.5</b> · смерть <b class="hi">−0.7</b> · TK <b class="hi">−10</b></li>
+    </ul>
+    <p class="note">Личный VIP — в магазине ниже. Клановый слот берёт лидер или зам из казны.</p>
+  </div>
   <section id="quest-rank" class="quest-rank"></section>
   <h2>Магазин</h2>
   <p class="note" id="shop-rule"></p>
@@ -20,9 +28,9 @@ import Base from "../layouts/Base.astro";
   const shopNote = document.querySelector<HTMLElement>("#shop-note")!;
   const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
   const diff: Record<string, string> = { easy: "Легкая", mid: "Средняя", hard: "Сложная" };
-  const repeat: Record<string, string> = { once: "Один раз", weekly: "Еженедельно", monthly: "Ежемесячно" };
+  const repeat: Record<string, string> = { once: "Раз в 24 ч", weekly: "Раз в 24 ч", monthly: "Раз в 24 ч" };
   type Quest = {
-    id: number; title: string; body: string; kills: number; difficulty: string; repeat: string;
+    id: number; title: string; body: string; kills: number; difficulty: string; repeat: string; retryIn?: number;
     xp: number; coins: number; minMeters: number; maxMeters: number; headshot: boolean; weapon: string;
     state: string; progress: number;
   };
@@ -47,16 +55,17 @@ import Base from "../layouts/Base.astro";
     const need = Number(data.need) || 50;
     const width = data.maxed ? 100 : Math.max(0, Math.min(100, Math.round((into / need) * 100)));
     rank.innerHTML = data.signedIn
-      ? `<p class="eyebrow">Уровень сообщества</p><div class="quest-score"><b>${level}</b><span>из 600</span><b>${Number(data.coins || 0).toFixed(1).replace(/\.0$/, "")}</b><span>очков</span></div><div class="rank-bar" aria-hidden="true"><span style="width:${width}%"></span></div><p class="note">${data.maxed ? "Потолок уровня." : `До следующего уровня ${need - into} опыта.`} 50 опыта — один уровень. Бой: килл 0.2 · стрик +10% · HS +0.5 · смерть −0.7 · TK −10.</p>`
-      : `<p>Чтобы взять квест и потратить очки, войди через Steam.</p><a class="btn" href="/auth/steam?next=/quests">Войти через Steam</a>`;
+      ? `<p class="eyebrow">Уровень сообщества</p><div class="quest-score"><b>${level}</b><span>из 600</span><b class="hi">${Number(data.coins || 0).toFixed(1).replace(/\.0$/, "")}</b><span>очков</span></div><div class="rank-bar" aria-hidden="true"><span style="width:${width}%"></span></div><p class="note">${data.maxed ? "Потолок уровня." : `До следующего уровня <b class="hi">${need - into}</b> опыта.`} <b class="hi">50</b> опыта — один уровень.</p>`
+      : `<p>Чтобы взять квест и потратить очки, войди через Steam.</p><a class="btn-primary" href="/auth/steam?next=/quests">Войти через Steam</a>`;
     const quests = data.quests ?? [];
     list.innerHTML = quests.map((quest) => {
-      const done = quest.state === "done";
+      const cooldown = quest.state === "cooldown";
       const ready = quest.state === "ready";
       const active = quest.state === "active" || ready;
+      const hoursLeft = cooldown ? Math.max(1, Math.ceil((Number(quest.retryIn) || 0) / 3600)) : 0;
       const width = Math.max(0, Math.min(100, Math.round((quest.progress / Math.max(quest.kills, 1)) * 100)));
-      const action = done
-        ? `<span class="pill now">Награда получена</span>`
+      const action = cooldown
+        ? `<span class="pill now">Перезарядка ~${hoursLeft} ч</span>`
         : ready
           ? `<button class="btn small" data-claim="${quest.id}" type="button">Забрать награду</button>`
           : active
@@ -65,18 +74,18 @@ import Base from "../layouts/Base.astro";
               ? `<button class="btn small" data-start="${quest.id}" type="button">Начать</button>`
               : "";
       const check = `<span class="quest-check" role="img" aria-label="Выполнен"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.500 4.500 4.500L19 7.500"/></svg></span>`;
-      const state = done ? "is-done" : ready ? "is-ready" : active ? "is-active" : "";
+      const state = cooldown ? "is-done" : ready ? "is-ready" : active ? "is-active" : "";
       return `<article class="quest ${state}">
         <header class="quest-head">
           <h2>${esc(quest.title)}</h2>
-          ${done ? check : ""}
+          ${cooldown ? check : ""}
         </header>
         <p class="quest-body">${esc(quest.body)}</p>
-        <p class="quest-pills"><span class="pill">${diff[quest.difficulty] || "Средняя"}</span><span class="pill">${repeat[quest.repeat] || "Один раз"}</span></p>
+        <p class="quest-pills"><span class="pill">${diff[quest.difficulty] || "Средняя"}</span><span class="pill">${repeat[quest.repeat] || "Раз в 24 ч"}</span></p>
         <ul>${rules(quest)}</ul>
         <div class="rewards">${reward("xp", quest.xp, "опыта")}${reward("coin", quest.coins, "очков")}</div>
         <div class="quest-foot">
-          <div class="rank-bar${done ? " full" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${done ? 100 : width}"><span style="width:${done ? 100 : width}%"></span></div>
+          <div class="rank-bar${cooldown ? " full" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${cooldown ? 100 : width}"><span style="width:${cooldown ? 100 : width}%"></span></div>
           ${action}
         </div>
       </article>`;
@@ -150,6 +159,7 @@ import Base from "../layouts/Base.astro";
     wait: "Квест ещё не выполнен.",
     done: "Награда по этому квесту уже получена.",
     ready: "Квест уже выполнен. Нажми «Забрать награду».",
+    cooldown: "Квест на перезарядке. Повторить можно через 24 часа после награды.",
     closed: "Этот квест уже закрыт.",
   };
   list.addEventListener("click", async (event) => {
