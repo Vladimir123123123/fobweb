@@ -26,6 +26,9 @@ export type CombatCard = {
   /** Последние решённые игры, новые первыми. */
   form: Array<"win" | "loss">;
   history: PlayedMatch[];
+  elo: number | null;
+  eloLevel: number | null;
+  eloGames: number;
   since: string | null;
   last: string | null;
 };
@@ -192,6 +195,8 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
   const decided = form.length;
   const wins = form.filter((item) => item === "win").length;
   const winrate = decided > 0 ? Math.round((wins / decided) * 1000) / 10 : null;
+  const { playerElo } = await import("./elo.js");
+  const eloCard = await playerElo(steamId);
   const feedKills = num(shots[0]?.kills);
   const hasFeed = feedKills > 0;
   const playedNow = num(row.match_kills) > 0 || num(row.match_deaths) > 0;
@@ -231,6 +236,9 @@ export async function combatCard(steamId: string): Promise<CombatCard | null> {
     winGames: decided,
     form,
     history,
+    elo: eloCard.rating,
+    eloLevel: eloCard.level,
+    eloGames: eloCard.games,
     since: iso(row.first_seen),
     last: iso(row.seen_at),
   };

@@ -449,6 +449,12 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
     values,
   );
   matchAnchors.delete(matchId);
+  try {
+    const { applyMatchElo } = await import("./elo.js");
+    await applyMatchElo(matchId);
+  } catch {
+    // ELO не должен ронять закрытие матча.
+  }
 }
 
 const sampled = new Map<string, number>();
@@ -532,6 +538,12 @@ export async function forceCloseMatch(matchId: string, endedAt: Date | null = nu
   if (idx >= 0) finished.splice(idx, 1);
   // Старые «склеенные» строки (500+) сносим перед пересчётом.
   await sql`DELETE FROM played_matches WHERE match_key = ${id}`;
+  try {
+    const { forgetMatchElo } = await import("./elo.js");
+    await forgetMatchElo(id);
+  } catch {
+    // ignore
+  }
   await closeMatch({ matchId: id, type: "match_ended" }, "", endedAt ?? new Date());
   markFinished(id);
   return true;

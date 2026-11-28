@@ -8,7 +8,8 @@ import Base from "../layouts/Base.astro";
   <div class="ladder-bar">
     <label>Сортировка
       <select id="sort">
-        <option value="level">Уровень</option>
+        <option value="elo" selected>ELO</option>
+        <option value="level">Уровень WARDOGS</option>
         <option value="xp">Опыт</option>
         <option value="value">Стоимость</option>
         <option value="cash">Деньги</option>
@@ -26,28 +27,31 @@ import Base from "../layouts/Base.astro";
       </select>
     </label>
     <label>Поиск<input id="q" placeholder="Ник" /></label>
-    <button class="btn ghost" id="me" type="button">Найти себя</button>
+    <button class="btn-outline small" id="me" type="button">Найти себя</button>
+    <button class="btn-outline small" id="cols-more" type="button" aria-pressed="false">Подробнее</button>
   </div>
   <p class="note" id="rating-note"></p>
   <div class="podium" id="podium"></div>
-  <div class="ladder">
+  <div class="ladder compact" id="ladder">
     <table class="ratings">
       <thead>
         <tr>
           <th>#</th>
           <th>Игрок</th>
-          <th title="Уровень"><img class="th-ico th-ico-level" src="/art/t_ui_icon_careerlevel_600.webp" alt="Уровень" width="16" height="16" /></th>
+          <th title="ELO по победам на FOB">ELO</th>
+          <th title="Уровень ELO">Ур.</th>
+          <th title="Уровень карьеры WARDOGS"><img class="th-ico th-ico-level" src="/art/t_ui_icon_careerlevel_600.webp" alt="Уровень" width="16" height="16" /></th>
           <th title="Опыт">XP</th>
           <th title="Стоимость">$</th>
-          <th title="Деньги">Кэш</th>
+          <th class="col-more" title="Деньги">Кэш</th>
           <th title="Золото"><img class="th-ico th-ico-gold" src="/art/t_ui_goldbars_icon.webp" alt="Золото" width="16" height="16" /></th>
-          <th title="Открытия">+</th>
-          <th title="Штурм"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_infantry.webp" alt="Штурм" width="18" height="18" /></th>
-          <th title="Медик"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_medic.webp" alt="Медик" width="18" height="18" /></th>
-          <th title="Разведка"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_recon.webp" alt="Разведка" width="18" height="18" /></th>
-          <th title="Поддержка"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_support.webp" alt="Поддержка" width="18" height="18" /></th>
-          <th title="Водитель"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_driver.webp" alt="Водитель" width="18" height="18" /></th>
-          <th title="Пилот"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_pilot.webp" alt="Пилот" width="18" height="18" /></th>
+          <th class="col-more" title="Открытия">+</th>
+          <th class="col-more" title="Штурм"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_infantry.webp" alt="Штурм" width="18" height="18" /></th>
+          <th class="col-more" title="Медик"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_medic.webp" alt="Медик" width="18" height="18" /></th>
+          <th class="col-more" title="Разведка"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_recon.webp" alt="Разведка" width="18" height="18" /></th>
+          <th class="col-more" title="Поддержка"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_support.webp" alt="Поддержка" width="18" height="18" /></th>
+          <th class="col-more" title="Водитель"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_driver.webp" alt="Водитель" width="18" height="18" /></th>
+          <th class="col-more" title="Пилот"><img class="th-ico th-ico-role" src="/art/t_ui_icon_role_pilot.webp" alt="Пилот" width="18" height="18" /></th>
           <th title="Убийства на сервере">У</th>
           <th title="Смерти на сервере">С</th>
           <th title="Убийства на смерть">К/Д</th>
@@ -81,9 +85,9 @@ import Base from "../layouts/Base.astro";
   const note = document.querySelector("#rating-note")!;
   const money = (value: number | null) => value === null || value === undefined ? "—" : `$${new Intl.NumberFormat("ru-RU").format(value)}`;
   const num = (value: unknown) => value === null || value === undefined || value === "" ? "—" : new Intl.NumberFormat("ru-RU").format(Number(value));
-  const columns: Record<string, number> = { level: 3, xp: 4, value: 5, cash: 6, gold: 7, unlocks: 8, assault: 9, medic: 10, recon: 11, support: 12, driver: 13, pilot: 14, kills: 15, deaths: 16, kd: 17 };
-  const labels: Record<string, string> = { level: "уровень", xp: "опыт", value: "стоимость", cash: "деньги", gold: "золото", unlocks: "открытия", assault: "штурм", medic: "медик", recon: "разведка", support: "поддержка", driver: "водитель", pilot: "пилот", kills: "убийства", deaths: "смерти", kd: "к/д" };
-  const fields: Record<string, string> = { level: "wardog_level", xp: "xp", value: "account_value", cash: "cash", gold: "gold", unlocks: "unlocks", assault: "role_assault", medic: "role_medic", recon: "role_recon", support: "role_support", driver: "role_driver", pilot: "role_pilot", kills: "server_kills", deaths: "server_deaths", kd: "server_kd" };
+  const columns: Record<string, number> = { elo: 3, level: 5, xp: 6, value: 7, cash: 8, gold: 9, unlocks: 10, assault: 11, medic: 12, recon: 13, support: 14, driver: 15, pilot: 16, kills: 17, deaths: 18, kd: 19 };
+  const labels: Record<string, string> = { elo: "ELO", level: "уровень", xp: "опыт", value: "стоимость", cash: "деньги", gold: "золото", unlocks: "открытия", assault: "штурм", medic: "медик", recon: "разведка", support: "поддержка", driver: "водитель", pilot: "пилот", kills: "убийства", deaths: "смерти", kd: "к/д" };
+  const fields: Record<string, string> = { elo: "elo_rating", level: "wardog_level", xp: "xp", value: "account_value", cash: "cash", gold: "gold", unlocks: "unlocks", assault: "role_assault", medic: "role_medic", recon: "role_recon", support: "role_support", driver: "role_driver", pilot: "role_pilot", kills: "server_kills", deaths: "server_deaths", kd: "server_kd" };
   const esc = (value: string) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
   const tierOf = (place: number) => place === 1 ? "r1" : place <= 5 ? "r5" : place <= 10 ? "r10" : place <= 25 ? "r25" : place <= 50 ? "r50" : place <= 100 ? "r100" : "r200";
   /** Тег только у одобренного сквада на сайте; игровые [TAG] в нике не показываем. */
@@ -136,7 +140,8 @@ import Base from "../layouts/Base.astro";
               : "";
     const seasonLabel = document.querySelector("#season-label");
     if (seasonLabel && data.season) seasonLabel.textContent = `сезон ${data.season}`;
-    note.textContent = [rewardNote, syncNote].filter(Boolean).join(" ") || `Сезон ${data.season}. В списке ${data.players.length}.`;
+    note.textContent = [rewardNote, syncNote].filter(Boolean).join(" ")
+      || `Сезон ${data.season}. В списке ${data.players.length}. ELO — по победам на сервере FOB; ур. — уровень ELO (1–40).`;
     const ranked = q.value.trim() === "";
     const hot = columns[sort.value] ?? 3;
     document.querySelectorAll<HTMLTableCellElement>(".ladder th").forEach((cell, index) => {
@@ -147,14 +152,21 @@ import Base from "../layouts/Base.astro";
     podium.innerHTML = ranked ? players.slice(0, 3).map((player, index) => {
       const place = index + 1;
       const name = displayName(player);
+      const crown = place === 1 ? `<span class="pod-crown" aria-hidden="true">♛</span>` : "";
+      const eloLine = player.elo_rating != null
+        ? `${num(player.elo_rating)} · ур. ${num(player.elo_level)}`
+        : statText(player, sort.value);
+      const eloSmall = sort.value === "elo" ? "ELO" : (labels[sort.value] ?? "");
       return `<a class="pod pod-${place} ${tierOf(place)}" href="/p?id=${player.steam_id}" style="--i:${place === 1 ? 0 : place}">
+        ${crown}
         <em>${place}</em>
         ${face(player)}
         <strong>${esc(name)}</strong>
-        <b>${statText(player, sort.value)}</b>
-        <small>${labels[sort.value] ?? ""}</small>
+        <b>${sort.value === "elo" ? eloLine : statText(player, sort.value)}</b>
+        <small>${eloSmall}</small>
       </a>`;
     }).join("") : "";
+    const moreKeys = new Set(["cash", "unlocks", "assault", "medic", "recon", "support", "driver", "pilot"]);
     rows.innerHTML = players.map((player, index) => {
       const place = index + 1;
       const name = displayName(player);
@@ -166,11 +178,23 @@ import Base from "../layouts/Base.astro";
       <tr class="${tier}" id="p-${player.steam_id}">
         <td class="place">${place}</td>
         <td class="who-cell"><a class="who ${tier}" href="/p?id=${player.steam_id}">${face(player)}<span class="name">${esc(name)}</span></a><a class="go" href="/p?id=${player.steam_id}" tabindex="-1" aria-hidden="true">Профиль</a></td>
-        ${stats.map((key, statIndex) => `<td class="${statIndex + 3 === hot ? "hot" : ""}">${statText(player, key)}</td>`).join("")}
+        <td class="${hot === 3 ? "hot" : ""}">${num(player.elo_rating)}</td>
+        <td>${num(player.elo_level)}</td>
+        ${stats.map((key) => {
+          const col = columns[key];
+          return `<td class="${col === hot ? "hot" : ""}${moreKeys.has(key) ? " col-more" : ""}">${statText(player, key)}</td>`;
+        }).join("")}
         <td>${faction ? esc(faction) : "—"}</td>
       </tr>`;
-    }).join("") || `<tr><td colspan="18">Пока никого нет. Строка появится после снимка карьеры или игры на нашем сервере.</td></tr>`;
+    }).join("") || `<tr><td colspan="20">Пока никого нет. Строка появится после снимка карьеры или игры на нашем сервере.</td></tr>`;
   }
+  document.querySelector("#cols-more")?.addEventListener("click", (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const ladder = document.querySelector("#ladder");
+    const open = ladder?.classList.toggle("compact") === false;
+    button.setAttribute("aria-pressed", open ? "true" : "false");
+    button.textContent = open ? "Скрыть" : "Подробнее";
+  });
   sort.addEventListener("change", load);
   let pending = 0;
   q.addEventListener("input", () => {

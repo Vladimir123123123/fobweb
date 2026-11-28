@@ -51,6 +51,7 @@ function trackerRequest(url: string, init: { method?: string; headers?: Record<s
 }
 
 const SORTS: Record<string, string> = {
+  elo: "elo_rating",
   level: "wardog_level",
   xp: "xp",
   value: "account_value",
@@ -1096,7 +1097,7 @@ app.post("/api/events", async (request, reply) => {
 
 app.get("/api/ratings", async (request) => {
   const query = request.query as Record<string, unknown>;
-  const sort = SORTS[text(query.sort, 20)] ? text(query.sort, 20) : "level";
+  const sort = SORTS[text(query.sort, 20)] ? text(query.sort, 20) : "elo";
   const column = SORTS[sort];
   const season = text(query.season, 20) || config.season;
   const q = text(query.q, 40).replace(/[%_]/g, "");
@@ -1112,6 +1113,12 @@ app.get("/api/ratings", async (request) => {
               WHEN c.deaths = 0 THEN c.kills
               ELSE ROUND(c.kills / c.deaths, 2)
             END AS server_kd,
+            e.rating AS elo_rating,
+            CASE
+              WHEN e.rating IS NULL THEN NULL
+              ELSE GREATEST(1, LEAST(40, FLOOR((e.rating - 750) / 50) + 1))
+            END AS elo_level,
+            e.games AS elo_games,
             (
               SELECT sq.tag FROM squad_members m
               JOIN squads sq ON sq.id = m.squad_id
@@ -1148,8 +1155,9 @@ app.get("/api/ratings", async (request) => {
        WHERE s.season = ?
      ) s ON s.steam_id = ids.steam_id
      LEFT JOIN server_combat c ON c.steam_id = ids.steam_id
+     LEFT JOIN player_elo e ON e.steam_id = ids.steam_id
      WHERE (? = '' OR COALESCE(u.persona, c.persona) LIKE ? OR ids.steam_id LIKE ?)
-     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, COALESCE(u.persona, c.persona) ASC
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, elo_rating IS NULL, elo_rating DESC, xp IS NULL, xp DESC, COALESCE(u.persona, c.persona) ASC
      LIMIT 200`,
     [season, season, season, season, q, `%${q}%`, `%${q}%`],
   );
@@ -1467,7 +1475,7 @@ app.get("/api/bot/squad-week", async (request, reply) => {
 app.get("/api/bot/board", async (request, reply) => {
   if (!botAuthorized(request)) return notFound(reply);
   const query = request.query as Record<string, unknown>;
-  const sort = SORTS[text(query.sort, 20)] ? text(query.sort, 20) : "level";
+  const sort = SORTS[text(query.sort, 20)] ? text(query.sort, 20) : "elo";
   const column = SORTS[sort];
   const season = text(query.season, 20) || config.season;
   const fobOnly = text(query.fob, 8) === "1" || text(query.fob, 8).toLowerCase() === "true";
@@ -1475,7 +1483,12 @@ app.get("/api/bot/board", async (request, reply) => {
   const rows = await sql.unsafe(
     `SELECT u.steam_id, COALESCE(s.season, ?) AS season, s.wardog_level, s.xp, s.account_value, s.cash, s.gold, s.unlocks,
             s.role_assault, s.role_medic, s.role_recon, s.role_support, s.role_driver, s.role_pilot,
-            s.created_at, u.persona, u.avatar, u.country, u.discord_id, u.discord_name
+            s.created_at, u.persona, u.avatar, u.country, u.discord_id, u.discord_name,
+            e.rating AS elo_rating,
+            CASE
+              WHEN e.rating IS NULL THEN NULL
+              ELSE GREATEST(1, LEAST(40, FLOOR((e.rating - 750) / 50) + 1))
+            END AS elo_level
      FROM users u
      JOIN (
        SELECT s.*
@@ -1488,6 +1501,7 @@ app.get("/api/bot/board", async (request, reply) => {
        ) latest ON latest.steam_id = s.steam_id AND latest.created_at = s.created_at
        WHERE s.season = ?
      ) s ON s.steam_id = u.steam_id
+     LEFT JOIN player_elo e ON e.steam_id = u.steam_id
      WHERE u.hide_leaderboard = 0 AND u.cis_opt_in = 1
        AND (
          ? = 0 OR EXISTS (
@@ -1497,7 +1511,7 @@ app.get("/api/bot/board", async (request, reply) => {
              AND sq.status = 'approved' AND UPPER(sq.tag) = 'FOB'
          )
        )
-     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, xp IS NULL, xp DESC, u.persona ASC
+     ORDER BY \`${column}\` IS NULL, \`${column}\` DESC, elo_rating IS NULL, elo_rating DESC, xp IS NULL, xp DESC, u.persona ASC
      LIMIT 200`,
     [season, season, season, fobOnly ? 1 : 0],
   );
@@ -2540,6 +2554,10 @@ setInterval(() => {
 await migrate();
 await seedGuides();
 await ensureShop();
+import("./elo.js")
+  .then(({ ensureEloBootstrap }) => ensureEloBootstrap())
+  .then((n) => report(n ? `elo пересчёт ${n}` : "elo"))
+  .catch((error) => report("elo", error));
 dumpDatabase().catch((error) => report("копия базы", error));
 setInterval(() => {
   dumpDatabase().then(() => report("копия базы")).catch((error) => report("копия базы", error));

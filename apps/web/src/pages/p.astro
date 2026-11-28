@@ -169,6 +169,7 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
         bestMatch?: number | null; matches?: number | null; perMatch?: number | null; faction?: string | null; side?: string | null;
         teamkills?: number | null; enemy?: { name?: string; count?: number } | null; target?: { name?: string; count?: number } | null;
         weapons?: Array<{ name?: string; kills?: number; headshots?: number }>; winrate?: number | null; winGames?: number; form?: string[];
+        elo?: number | null; eloLevel?: number | null; eloGames?: number;
         history?: Array<{ endedAt?: string | null; server?: string; map?: string; minutes?: number | null; faction?: string; result?: string; place?: number | null; field?: number | null; kills?: number; deaths?: number; kd?: number | null; headshots?: number; teamkills?: number; weapon?: string }>;
         since?: string | null; last?: string | null;
       } | null;
@@ -331,11 +332,17 @@ for (const gun of [...catalog.weapons, ...catalog.sidearms]) {
                 ${spark("kd")}
               </div>
               <div class="tile tile-win">
-                <i class="tile-ring" style="--p:${Math.max(0, Math.min(100, Number(combat.winrate) || 0))}"></i>
+                <div class="tile-ring" style="--p:${Math.max(0, Math.min(100, Number(combat.winrate) || 0))}" aria-hidden="true">
+                  <b>${combat.winrate == null ? "—" : `${Number(combat.winrate).toFixed(0)}%`}</b>
+                </div>
                 <span>Винрейт · последние 10</span>
-                ${cnt(combat.winrate, 1, "%")}
                 <small>${Number(combat.winGames) > 0 ? `${num(combat.winGames)} полных ${Number(combat.winGames) === 1 ? "матч" : Number(combat.winGames) < 5 ? "матча" : "матчей"}` : "После матча от начала до конца"}</small>
                 ${(combat.form ?? []).length ? `<div class="form" role="img" aria-label="Последние игры">${(combat.form ?? []).slice().reverse().map((item) => `<i class="${item === "win" ? "win" : "loss"}" title="${item === "win" ? "Победа" : "Поражение"}"></i>`).join("")}</div>` : ""}
+              </div>
+              <div class="tile">
+                <span>ELO · FOB</span>
+                ${cnt(combat.elo)}
+                <small>${combat.eloLevel != null ? `уровень ${num(combat.eloLevel)}` : "после побед на сервере"}${Number(combat.eloGames) > 0 ? ` · ${num(combat.eloGames)} игр` : ""}</small>
               </div>
               <div class="tile"><span>Хедшоты</span>${cnt(combat.headshotPct, 1, "%")}<small>${combat.headshots == null ? "" : `${num(combat.headshots)} шт.`}</small>${spark("headshots") || glyph("crosshair")}</div>
               <div class="tile"><span>Лучший матч</span>${cnt(combat.bestMatch)}<small>убийств</small>${spark("kills") || glyph("trophy")}</div>
