@@ -294,7 +294,7 @@ type SquadMatchRow = {
   name: string | null;
 };
 
-/** Недельный рейтинг сквадов: матч засчитывается, если ≥5 участников одного сквада на одной стороне. */
+/** Недельный рейтинг сквадов: ≥5 своих на стороне. Считаем и неполные (leave / не в топ-120). */
 export async function squadWeekBoard(now = new Date()) {
   const closed = moscowWeek(now, -1);
   const current = moscowWeek(now, 0);
@@ -329,12 +329,19 @@ export async function squadWeekBoard(now = new Date()) {
       players: Map<string, { name: string; kills: number; deaths: number; games: number }>;
     };
     const acc = new Map<number, Acc>();
+    const winnersByMatch = new Map<string, Set<string>>();
     const grouped = new Map<string, SquadMatchRow[]>();
     for (const row of rows) {
       const steam = String(row.steam_id);
       const faction = String(row.faction || "").trim();
+      const matchKey = String(row.match_key);
+      if (String(row.result || "").toLowerCase() === "win" && faction) {
+        const set = winnersByMatch.get(matchKey) ?? new Set<string>();
+        set.add(faction);
+        winnersByMatch.set(matchKey, set);
+      }
       if (!bySteam.has(steam) || !faction) continue;
-      const key = `${row.match_key}::${faction}`;
+      const key = `${matchKey}::${faction}`;
       const bucket = grouped.get(key) ?? [];
       bucket.push(row);
       grouped.set(key, bucket);
@@ -348,7 +355,31 @@ export async function squadWeekBoard(now = new Date()) {
         list.push(row);
         bySquad.set(meta.squadId, list);
       }
-      for (const [squadId, list] of bySquad) {
+      for (const [squadId, raw] of bySquad) {
+        // Presence ∪ played может дать одного человека дважды — оставляем более полную строку.
+        const uniq = new Map<string, SquadMatchRow>();
+        const rank = (row: SquadMatchRow) => {
+          const result = String(row.result || "").toLowerCase();
+          if (result === "win") return 3;
+          if (result === "loss") return 2;
+          if (result === "leave") return 1;
+          return 0;
+        };
+        for (const row of raw) {
+          const steam = String(row.steam_id);
+          const prev = uniq.get(steam);
+          if (!prev) {
+            uniq.set(steam, row);
+            continue;
+          }
+          if (
+            rank(row) > rank(prev)
+            || (rank(row) === rank(prev) && (Number(row.kills) || 0) > (Number(prev.kills) || 0))
+          ) {
+            uniq.set(steam, row);
+          }
+        }
+        const list = [...uniq.values()];
         if (list.length < SQUAD_MIN_SIDE) continue;
         const meta = squadMeta.get(squadId);
         if (!meta) continue;
@@ -365,7 +396,11 @@ export async function squadWeekBoard(now = new Date()) {
           acc.set(squadId, pack);
         }
         pack.games.add(key);
-        const won = list.some((row) => String(row.result || "").toLowerCase() === "win");
+        const matchKey = key.split("::")[0] || "";
+        const side = String(list[0]?.faction || "").trim();
+        const won =
+          list.some((row) => String(row.result || "").toLowerCase() === "win")
+          || Boolean(side && winnersByMatch.get(matchKey)?.has(side));
         if (won) pack.wins.add(key);
         for (const row of list) {
           const steam = String(row.steam_id);
@@ -441,21 +476,62 @@ export async function squadWeekBoard(now = new Date()) {
   };
 }
 
+/** Участники зачётных матчей: и доигравшие (win/loss), и вышедшие/обрезанные топ-120.
+ *  Берём presence+киллы по закрытому match_key и дополняем строками played_matches. */
 async function squadMatchRows(span: ReturnType<typeof moscowWeek>) {
-  return sql<SquadMatchRow[]>`
-    SELECT p.match_key,
-           p.steam_id,
-           p.faction,
-           p.result,
-           p.kills,
-           p.deaths,
-           COALESCE(u.persona, p.steam_id) AS name
-    FROM played_matches p
-    LEFT JOIN users u ON u.steam_id = p.steam_id
-    WHERE p.ended_at >= ${span.start} AND p.ended_at < ${span.end}
-      AND p.result IN ('win', 'loss')
-      AND p.faction <> ''
-      AND p.field_size BETWEEN 2 AND 120
-      AND p.steam_id REGEXP '^[0-9]{17}$'
-  `;
+  return sql.unsafe<SquadMatchRow[]>(
+    `SELECT match_key, steam_id, faction, result, kills, deaths, name FROM (
+       SELECT p.match_id AS match_key,
+              p.steam_id,
+              p.faction,
+              COALESCE(pm.result, '') AS result,
+              COALESCE(pm.kills, k.kills, 0) AS kills,
+              COALESCE(pm.deaths, k.deaths, 0) AS deaths,
+              COALESCE(u.persona, NULLIF(p.name, ''), p.steam_id) AS name
+       FROM match_presence p
+       INNER JOIN (
+         SELECT DISTINCT match_key
+         FROM played_matches
+         WHERE ended_at >= ? AND ended_at < ?
+           AND match_key NOT LIKE 'legacy-%'
+           AND COALESCE(field_size, 0) BETWEEN 2 AND 120
+       ) closed ON closed.match_key = p.match_id
+       INNER JOIN (
+         SELECT match_id, steam_id, SUM(kills) AS kills, SUM(deaths) AS deaths
+         FROM (
+           SELECT match_id, killer_steam AS steam_id, SUM(suicide = 0) AS kills, 0 AS deaths
+           FROM server_kills
+           WHERE match_id <> '' AND killer_steam REGEXP '^[0-9]{17}$'
+           GROUP BY match_id, killer_steam
+           UNION ALL
+           SELECT match_id, victim_steam AS steam_id, 0 AS kills, COUNT(*) AS deaths
+           FROM server_kills
+           WHERE match_id <> '' AND victim_steam REGEXP '^[0-9]{17}$' AND suicide = 0
+           GROUP BY match_id, victim_steam
+         ) parts
+         GROUP BY match_id, steam_id
+       ) k ON k.match_id = p.match_id AND k.steam_id = p.steam_id
+       LEFT JOIN played_matches pm
+         ON pm.match_key = p.match_id AND pm.steam_id = p.steam_id
+       LEFT JOIN users u ON u.steam_id = p.steam_id
+       WHERE p.faction <> ''
+         AND p.steam_id REGEXP '^[0-9]{17}$'
+       UNION
+       SELECT pm.match_key,
+              pm.steam_id,
+              pm.faction,
+              pm.result,
+              pm.kills,
+              pm.deaths,
+              COALESCE(u.persona, pm.steam_id) AS name
+       FROM played_matches pm
+       LEFT JOIN users u ON u.steam_id = pm.steam_id
+       WHERE pm.ended_at >= ? AND pm.ended_at < ?
+         AND pm.match_key NOT LIKE 'legacy-%'
+         AND pm.faction <> ''
+         AND COALESCE(pm.field_size, 0) BETWEEN 2 AND 120
+         AND pm.steam_id REGEXP '^[0-9]{17}$'
+     ) t`,
+    [span.start, span.end, span.start, span.end],
+  );
 }

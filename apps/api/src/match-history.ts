@@ -407,7 +407,7 @@ async function closeMatch(event: FeedEvent, serverName: string, endedAt: Date | 
         best = count;
       }
     }
-    const result = matchResult(person.faction, winner, false);
+    const result = matchResult(person.faction, winner, person.left);
     placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     values.push(
       person.steamId,
